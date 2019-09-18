@@ -1,8 +1,19 @@
 # gitstat
-Get statistics about commits from git service.
 
-We use the REST API provided by bitbucket and github to obtain information about commits.
+There two versions of gitstat.
 
-We use libcurl to send HTTP request. (We currently use curl command for convenience)
+## V1
 
-We use nlohmann/json to parson response in JSON.
+Dependency: Bitbucket API / Github API + libcurl + "JSON for Modern C++"
+
+Rely on REST API provided by git service.
+
+## V2
+
+Dependency: git + repository at local
+
+Rely on git and has a copy at local.
+
+(with single header file)
+
+

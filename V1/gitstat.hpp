@@ -1,5 +1,5 @@
-#ifndef _GITSTAT_H_
-#define _GITSTAT_H_
+#ifndef _GITSTAT_H_V1_
+#define _GITSTAT_H_V1_
 
 #include <cstdio>
 #include <string>
