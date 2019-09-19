@@ -55,10 +55,14 @@ bool update_repository(const char *repository_directory){
 
 // haven't consider time
 // https://stackoverflow.com/questions/7651644/git-timezone-and-timestamp-format
-bool get_lines_statistics(const char *repository_directory, const char *auther_name, const char *since, const char *before, int &lines_inserted, int &lines_deleted){
+bool get_lines_statistics(const char *repository_directory, const char *auther_name, const char *since, const char *until, int &lines_inserted, int &lines_deleted){
     char command[1024];
     std::string result;
-    sprintf(command, "git --no-pager --git-dir=\"%s\" log --pretty=\"\" --shortstat --author=\"%s\" --no-merges", repository_directory, auther_name);
+    sprintf(command, "git --no-pager --git-dir=\"%s\" log --date=local --pretty=\"\" --shortstat --author=\"%s\" --no-merges", repository_directory, auther_name);
+    if(since != NULL)
+        sprintf(command, "%s --since=\"%s\"", command, since);
+    if(until != NULL)
+        sprintf(command, "%s --until=\"%s\"", command, until);
     exec(command, result);
     printf("%s\n", result.c_str());
     lines_inserted = lines_deleted = 0;
@@ -69,10 +73,14 @@ bool get_lines_statistics(const char *repository_directory, const char *auther_n
     return true;
 }
 
-bool get_words_statistics(const char *repository_directory, const char *auther_name, const char *since, const char *before, int &words_inserted, int &words_deleted){
+bool get_words_statistics(const char *repository_directory, const char *auther_name, const char *since, const char *until, int &words_inserted, int &words_deleted){
     char command[1024];
     std::string result;
-    sprintf(command, "git --no-pager --git-dir=\"%s\" log --pretty=\"\" -p --word-diff=porcelain --author=\"%s\" --no-merges", repository_directory, auther_name);
+    sprintf(command, "git --no-pager --git-dir=\"%s\" log --date=local --pretty=\"\" -p --word-diff=porcelain --author=\"%s\" --no-merges", repository_directory, auther_name);
+    if(since != NULL)
+        sprintf(command, "%s --since=\"%s\"", command, since);
+    if(until != NULL)
+        sprintf(command, "%s --until=\"%s\"", command, until);
     exec(command, result);
     // printf("%s\n", result.c_str()); // or use while loop with putchar is ok
     words_inserted = words_deleted = 0;
@@ -102,10 +110,11 @@ bool get_words_statistics(const char *repository_directory, const char *auther_n
 // fwrite(result.c_str(), 1, result.length() + 1, stdout); // I don't know why fwrite cannot work for long string
 // puts(result.c_str()); // I don't know why puts() cannot work for long string (need formating?)
 
-
 // have config_profskill_2019.json (directory for repository, for specific folder, for specific time duration)
 // make contributers_profskill_2019.json (name, email)
 // load information from that json and get statistics.
 // then generate a javascript webpage based on those statistics
+
+// https://stackoverflow.com/questions/14618022/how-does-git-log-since-count
 
 #endif
