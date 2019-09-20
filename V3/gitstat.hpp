@@ -188,7 +188,7 @@ bool generate_statistics(const char *config){
     for(int i = 0; i < contributors.size(); ++i)
         statistics[i].reserve(queries.size());
     for(int i = 0; i < contributors.size(); ++i){
-        printf("Get data for %s ... ", contributors[i].name.c_str());
+        printf("(%d/%d) Get data for %s ... ", i + 1, contributors.size(), contributors[i].name.c_str());
         for(auto &x: queries){
             for(auto &y: contributors[i].email){
                 get_lines_statistics(repository.c_str(), y.c_str(), x.since.c_str(), x.until.c_str(), lines_inserted, lines_deleted, num_commits);
@@ -217,7 +217,7 @@ bool generate_statistics(const char *config){
         "<head>"
         "<title>Statistics</title>"
         "<meta charset=\"UTF-8\">"
-        "<link href=\"https://fonts.googleapis.com/css?family=Roboto\" rel=\"stylesheet\">"
+        "<link href=\"https://fonts.googleapis.com/css?family=Roboto|Noto+Serif+TC\" rel=\"stylesheet\">"
         "<link href=\"css/style.css\" rel=\"stylesheet\" type=\"text/css\">"
         "</head>"
         "<body>"
@@ -236,7 +236,7 @@ bool generate_statistics(const char *config){
         fprintf(fp, "<th>%s</th>", x.name.c_str());
     fprintf(fp, "<th>Net words count</th><th>Weeks with commits</th><th>GIT Score</th></tr>");
     for(int i = 0; i < contributors.size(); ++i){
-        printf("Generate statistics for %s\n", contributors[i].name.c_str());
+        printf("(%d/%d) Generate statistics for %s\n", i + 1, contributors.size(), contributors[i].name.c_str());
         fprintf(fp, "<tr><td>%s</td><td>%s</td>", contributors[i].name.c_str(), contributors[i].semester.c_str());
         net_words_count = weeks_with_commits = 0;
         for(int j = 0; j < queries.size(); ++j){

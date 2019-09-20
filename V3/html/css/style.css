@@ -4,7 +4,7 @@ body {
     padding: 0px;
     background-color: rgb(240, 240, 240);
     font-size: 18px;
-    font-family: 'Roboto', 'Arial', sans-serif;
+    font-family: 'Roboto', 'Noto Serif TC', Arial, sans-serif;
 }
 
 header {
@@ -47,6 +47,9 @@ tr {
 }
 td {
     padding: 5px;
+}
+tr td:nth-child(1) {
+    text-align: left;
 }
 
 p#total_authors {
