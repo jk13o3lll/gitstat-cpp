@@ -1,3 +1,4 @@
 *.exe
 *.json
 *.htm
+!config_template.json
