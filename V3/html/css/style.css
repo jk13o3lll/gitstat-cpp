@@ -1,0 +1,57 @@
+body {
+    margin: 0px;
+    border: 0px;
+    padding: 0px;
+    background-color: rgb(240, 240, 240);
+    font-size: 18px;
+    font-family: 'Roboto', 'Arial', sans-serif;
+}
+
+header {
+    margin: 0px;
+    border: 0px;
+    padding: 20px;
+    background-color: rgb(50, 50, 50);
+    color: white;
+    text-align: center;
+}
+header h1 {
+    font-size: 45px;
+    font-weight: 100px;
+}
+
+main {
+    padding-left: 4%;
+    padding-right: 4%;
+}
+main h1 {
+    color: rgb(50, 50, 50);
+}
+main p {
+    font-size: 20px;
+}
+
+table {
+    width: 100%;
+    margin-left: auto;
+    margin-right: auto;
+    text-align: center;
+}
+th {
+    background-color: rgb(179, 224,255);
+    color: rgb(0, 61, 102);
+}
+tr {
+    background-color: rgb(220, 245, 220);
+    color: rgb(50, 50, 50);
+}
+td {
+    padding: 5px;
+}
+
+p#total_authors {
+    text-align: right;
+}
+p#notes {
+    text-align: center;
+}

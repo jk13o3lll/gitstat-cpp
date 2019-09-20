@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <cstring>
 #include <cstdlib>
+#include <ctime>
 #include <string>
 #include <fstream>
 #include <vector>
@@ -158,6 +159,8 @@ bool generate_statistics(const char *config){
     int net_words_count, weeks_with_commits;
     float w_num_commits, w_lines_inserted, w_lines_deleted, w_words_inserted, w_words_deleted;
     FILE *fp;
+    time_t raw_time;
+    tm *local_time;
 
     fs >> js;
     fs.close();
@@ -185,16 +188,17 @@ bool generate_statistics(const char *config){
     for(int i = 0; i < contributors.size(); ++i)
         statistics[i].reserve(queries.size());
     for(int i = 0; i < contributors.size(); ++i){
-        printf("Get data for %s\n", contributors[i].name.c_str());
+        printf("Get data for %s ... ", contributors[i].name.c_str());
         for(auto &x: queries){
             for(auto &y: contributors[i].email){
                 get_lines_statistics(repository.c_str(), y.c_str(), x.since.c_str(), x.until.c_str(), lines_inserted, lines_deleted, num_commits);
                 get_words_statistics(repository.c_str(), y.c_str(), x.since.c_str(), x.until.c_str(), words_inserted, words_deleted);
-                if(lines_inserted != 0 || lines_deleted != 0 || num_commits != 0 || words_inserted != 0 || words_deleted != 0)
+                if(num_commits != 0)
                     break;
             }
             statistics[i].push_back(Statistics(num_commits, lines_inserted, lines_deleted, words_inserted, words_deleted));
         }
+        printf("done.\n");
     }
     w_num_commits = js["weights"]["num_commits"].get<float>();
     w_lines_inserted = js["weights"]["lines_inserted"].get<float>();
@@ -203,28 +207,57 @@ bool generate_statistics(const char *config){
     w_words_deleted = js["weights"]["words_deleted"].get<float>();
     // printf("weights = %f, %f, %f, %f\n", w_num_commits, w_lines_inserted, w_lines_deleted, w_words_inserted, w_words_deleted);
 
+    // generate webpage
+    time(&raw_time);
+    local_time = localtime(&raw_time);
     fp = fopen(js["html"].get<std::string>().c_str(), "w");
-    fprintf(fp, "<html><body>\n");
-    // header
-    fprintf(fp, "Authors, Semester, ");
+    fprintf(fp,
+        "<!DOCTYPE html>"
+        "<html>"
+        "<head>"
+        "<title>Statistics</title>"
+        "<meta charset=\"UTF-8\">"
+        "<link href=\"https://fonts.googleapis.com/css?family=Roboto\" rel=\"stylesheet\">"
+        "<link href=\"css/style.css\" rel=\"stylesheet\" type=\"text/css\">"
+        "</head>"
+        "<body>"
+        "<header>"
+        "<h1>%s</h1>"
+        "<p>Accessed at %04d-%02d-%02d %02d:%02d:%02d from git repository.</p>"
+        "</header>"
+        "<main>"
+        "<h1>Statistics of the Commits on Bitbucket</h1>"
+        "<table>"
+        "<tr><th>Authors</th><th>Semester</th>",
+        js["title"].get<std::string>().c_str(),
+        local_time->tm_year + 1900, local_time->tm_mon + 1, local_time->tm_mday, local_time->tm_hour, local_time->tm_min, local_time->tm_sec
+    );
     for(auto &x: queries)
-        fprintf(fp, "%s, ", x.name.c_str());
-    fprintf(fp, "Net words count, Weeks with commits, GIT Score\n");
-    // body
+        fprintf(fp, "<th>%s</th>", x.name.c_str());
+    fprintf(fp, "<th>Net words count</th><th>Weeks with commits</th><th>GIT Score</th></tr>");
     for(int i = 0; i < contributors.size(); ++i){
         printf("Generate statistics for %s\n", contributors[i].name.c_str());
-        fprintf(fp, "%s, %s, ", contributors[i].name.c_str(), contributors[i].semester.c_str());
+        fprintf(fp, "<tr><td>%s</td><td>%s</td>", contributors[i].name.c_str(), contributors[i].semester.c_str());
         net_words_count = weeks_with_commits = 0;
         for(int j = 0; j < queries.size(); ++j){
-            fprintf(fp, "%d, ", statistics[i][j].words_inserted + statistics[i][j].words_deleted);
+            fprintf(fp, "<td>%d</td>", statistics[i][j].words_inserted + statistics[i][j].words_deleted);
             net_words_count += statistics[i][j].words_inserted + statistics[i][j].words_deleted;
             if(statistics[i][j].num_commits > 0)
                 ++weeks_with_commits;
         }
-        fprintf(fp, "%d, %d, %d\n", net_words_count, weeks_with_commits, 0); // haven't set rule for total commit score
+        fprintf(fp, "<td>%d</td><td>%d</td><td>%d</td></tr>", net_words_count, weeks_with_commits, 0); // haven't set rule for total commit score
     }
-    // end
-    fprintf(fp, "</body></html>");
+    fprintf(fp,
+        "</table>"
+        "<p id=\"total_authors\">X Total authors: %d</p>" // 0
+        "<p id=\"notes\">Note that merges won't give unfair points.</p>"
+        "</main>"
+        "<footer>"
+        "</footer>"
+        "</body>"
+        "</html>",
+        js["contributors"].size()
+    );
     fclose(fp);
 
     return true;
