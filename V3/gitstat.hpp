@@ -154,7 +154,7 @@ bool generate_statistics(const char *config){
     std::string repository;
     std::vector<Query> queries;
     std::vector<Contributor> contributors;
-    std::vector<std::vector<Statistics>> statistics;
+    std::vector<Statistics> statistics[10001];
     int lines_inserted, lines_deleted, num_commits, words_inserted, words_deleted;
     int net_words_count, weeks_with_commits;
     float w_num_commits, w_lines_inserted, w_lines_deleted, w_words_inserted, w_words_deleted;
@@ -184,9 +184,9 @@ bool generate_statistics(const char *config){
     //     putchar('\n');
     // }
 
-    statistics.reserve(contributors.size());
     for(int i = 0; i < contributors.size(); ++i)
         statistics[i].reserve(queries.size());
+    
     for(int i = 0; i < contributors.size(); ++i){
         printf("(%d/%d) Get data for %s ... ", i + 1, contributors.size(), contributors[i].name.c_str());
         for(auto &x: queries){
@@ -217,6 +217,7 @@ bool generate_statistics(const char *config){
         "<head>"
         "<title>Statistics</title>"
         "<meta charset=\"UTF-8\">"
+        "<link href=\"https://fonts.googleapis.com/icon?family=Material+Icons\" rel=\"stylesheet\">"
         "<link href=\"https://fonts.googleapis.com/css?family=Roboto|Noto+Serif+TC\" rel=\"stylesheet\">"
         "<link href=\"css/style.css\" rel=\"stylesheet\" type=\"text/css\">"
         "</head>"
@@ -227,14 +228,18 @@ bool generate_statistics(const char *config){
         "</header>"
         "<main>"
         "<h1>Statistics of the Commits on Bitbucket</h1>"
-        "<table>"
-        "<tr><th>Authors</th><th>Semester</th>",
+        "<table id=\"statistics\">"
+        "<tr>"
+        "<th onclick=\"sortTable(0)\" class=\"normal\">Authors <i class=\"material-icons\">unfold_more</i></th>"
+        "<th onclick=\"sortTable(1)\" class=\"normal\">Semester <i class=\"material-icons\">unfold_more</i></th>",
         js["title"].get<std::string>().c_str(),
         local_time->tm_year + 1900, local_time->tm_mon + 1, local_time->tm_mday, local_time->tm_hour, local_time->tm_min, local_time->tm_sec
     );
-    for(auto &x: queries)
-        fprintf(fp, "<th>%s</th>", x.name.c_str());
-    fprintf(fp, "<th>Net words count</th><th>Weeks with commits</th><th>GIT Score</th></tr>");
+    for(int i = 0; i < queries.size(); ++i)
+        fprintf(fp, "<th onclick=\"sortTable(%d)\" class=\"normal\">%s <i class=\"material-icons\">unfold_more</i></th>", i + 2, queries[i].name.c_str());
+    fprintf(fp, "<th onclick=\"sortTable(%d)\" class=\"normal\">Net words count <i class=\"material-icons\">unfold_more</i></th>", 2 + queries.size());
+    fprintf(fp, "<th onclick=\"sortTable(%d)\" class=\"normal\">Weeks with commits <i class=\"material-icons\">unfold_more</i></th>", 3 + queries.size());
+    fprintf(fp, "<th onclick=\"sortTable(%d)\" class=\"normal\">GIT Score <i class=\"material-icons\">unfold_more</i></th></tr>", 4 + queries.size());
     for(int i = 0; i < contributors.size(); ++i){
         printf("(%d/%d) Generate statistics for %s\n", i + 1, contributors.size(), contributors[i].name.c_str());
         fprintf(fp, "<tr><td>%s</td><td>%s</td>", contributors[i].name.c_str(), contributors[i].semester.c_str());
@@ -245,7 +250,7 @@ bool generate_statistics(const char *config){
             if(statistics[i][j].num_commits > 0)
                 ++weeks_with_commits;
         }
-        fprintf(fp, "<td>%d</td><td>%d</td><td>%d</td></tr>", net_words_count, weeks_with_commits, 0); // haven't set rule for total commit score
+        fprintf(fp, "<td>%d</td><td>%d</td><td>%f</td></tr>", net_words_count, weeks_with_commits, 0.0f); // haven't set rule for total commit score
     }
     fprintf(fp,
         "</table>"
@@ -254,6 +259,64 @@ bool generate_statistics(const char *config){
         "</main>"
         "<footer>"
         "</footer>"
+        "<script>"
+        "function sortTable(n) {"
+            "var table, rows, switching, i, j, x, y, shouldSwitch, headers, descend;"
+            "table = document.getElementById(\"statistics\");"
+            "rows = table.rows;"
+            "headers = rows[0].cells;"
+            "if(headers[n].className == \"descend\") {"
+                "headers[n].className = \"ascend\";"
+                "headers[n].getElementsByTagName(\"I\")[0].innerHTML = \"expand_less\";"
+                "descend = 0;"
+            "}"
+            "else {"
+                "headers[n].className = \"descend\";"
+                "headers[n].getElementsByTagName(\"I\")[0].innerHTML = \"expand_more\";"
+                "descend = 1;"
+            "}"
+            "for (i = 0; i < headers.length; i++) {"
+                "if (i != n && headers[i].className != \"normal\") {"
+                    "headers[i].className = \"normal\";"
+                    "headers[i].getElementsByTagName(\"I\")[0].innerHTML = \"unfold_more\";"
+                "}"
+            "}"
+            "switching = true;"
+            "while (switching) {"
+                "switching = false;"
+                "rows = table.rows;"
+                "for (i = 1; i < (rows.length - 1); i++) {"
+                    "shouldSwitch = false;"
+                    "x = rows[i].getElementsByTagName(\"TD\")[n];"
+                    "y = rows[i + 1].getElementsByTagName(\"TD\")[n];"
+                    "if (n != 0) {"
+                        "if (descend == 0 && Number(x.innerHTML) > Number(y.innerHTML)) {"
+                            "shouldSwitch = true;"
+                            "break;"
+                        "}"
+                        "else if (descend == 1 && Number(x.innerHTML) < Number(y.innerHTML)) {"
+                            "shouldSwitch = true;"
+                            "break;"
+                        "}"
+                    "}"
+                    "else {"
+                        "if (descend == 0 && x.innerHTML.toLowerCase() > y.innerHTML.toLowerCase()) {"
+                            "shouldSwitch = true;"
+                            "break;"
+                        "}"
+                        "else if (descend == 1 && x.innerHTML.toLowerCase() < y.innerHTML.toLowerCase()) {"
+                            "shouldSwitch = true;"
+                            "break;"
+                        "}"
+                    "}"
+                "}"
+                "if (shouldSwitch) {"
+                    "rows[i].parentNode.insertBefore(rows[i + 1], rows[i]);"
+                    "switching = true;"
+                "}"
+            "}"
+        "}"
+        "</script>"
         "</body>"
         "</html>",
         js["contributors"].size()
