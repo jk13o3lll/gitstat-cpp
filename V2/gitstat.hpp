@@ -91,6 +91,7 @@ bool update_repository(const char *repository_directory){
     }
 }
 
+// git -C "C:\\Users\\Jack Wang\\Repositories\\nordlinglab-profskills" --git-dir=".git" --no-pager log --date=local --pretty="" --shortstat --author="jack.wang@nordlinglab.org" --no-merges
 bool get_lines_statistics(const char *repository_directory, const char *auther_name, const char *since, const char *until, int &lines_inserted, int &lines_deleted, int &num_commits){
     char command[1024];
     std::string result;
@@ -211,6 +212,10 @@ bool generate_statistics(const char *config){
     time(&raw_time);
     local_time = localtime(&raw_time);
     fp = fopen(js["html"].get<std::string>().c_str(), "w");
+    if(fp == NULL){
+        fprintf(stderr, "Failed to open html file.\n");
+        return false;
+    }
     fprintf(fp,
         "<!DOCTYPE html>"
         "<html>"
