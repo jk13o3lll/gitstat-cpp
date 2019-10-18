@@ -8,7 +8,7 @@ Dependency: Bitbucket API / Github API + libcurl + json parser
 
 Rely on REST API provided by git service. (can get more information)
 
-## V2
+## V2, V3 (latest version)
 
 Dependency: git + repository at local + json parser
 
@@ -64,12 +64,12 @@ Template configuration file `config.json`. (there should have `.git` flie in `/r
         {
             "name": "Jack",
             "email": ["jack@gmail.com", "jack@yahoo.com"],
-            "semester": "2019"
+            "label": ["2019", "TA"]
         },
         {
             "name": "Bob",
-            "email": ["Bob@gmail.com", "precipitation25@gmail.com"],
-            "semester": "2019"
+            "email": ["Bob@gmail.com", "Bob2@gmail.com"],
+            "label": ["2019"]
         }
     ]
 }
@@ -78,5 +78,12 @@ Template configuration file `config.json`. (there should have `.git` flie in `/r
 Then input the configuration file to the executable file `test.exe`.
 
 ```
-test.exe config.json
+gitstat.exe config.json
+```
+
+To set it as routine in Linux, please use `crontab`. (ex. update every hour)
+
+```
+crontab -e
+0 1 * * * gitstat.exe config.json
 ```
