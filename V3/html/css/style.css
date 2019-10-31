@@ -62,18 +62,24 @@ tr {
     color: rgb(50, 50, 50);
 }
 tr:nth-child(even) {
-  background-color: rgb(185, 228, 192);
+    background-color: rgb(185, 228, 192);
+}
+tr td:nth-child(1) {
+    text-align: left;
 }
 td {
     padding: 5px;
 }
-tr td:nth-child(1) {
-    text-align: left;
+td.nodiary {
+    background-color: rgb(140, 150, 140);
 }
 
 p#total_authors {
     text-align: right;
 }
-p#notes {
+p#notes1 {
+    text-align: center;
+}
+p#notes2 {
     text-align: center;
 }

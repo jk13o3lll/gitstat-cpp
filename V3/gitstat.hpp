@@ -16,43 +16,56 @@ using json = nlohmann::json;
     #define pclose _pclose
 #endif
 
-struct Query{
-    Query(const json &js):
-        name(js["name"].get<std::string>()),
-        since(js["duration"][0].get<std::string>()),
-        until(js["duration"][1].get<std::string>()){}
-
-    std::string name;
-    std::string since;
-    std::string until;
-};
-
-struct Contributor{
-    Contributor(const json &js):
-        name(js["name"].get<std::string>()){
-        for(const auto &x: js["email"])
-            email.push_back(x.get<std::string>());
-        for(const auto &x: js["label"])
-            label.push_back(x.get<std::string>());
-    }
-
-    std::string name;
-    std::vector<std::string> email;
-    std::vector<std::string> label;
-};
-
 struct Statistics{
-    Statistics(int num_commits_, int lines_inserted_, int lines_deleted_, int words_inserted_, int words_deleted_):
+    Statistics(int num_commits_, int lines_inserted_, int lines_deleted_, int words_inserted_, int words_deleted_, bool has_diary_):
         num_commits(num_commits_),
-        lines_inserted(lines_inserted_), lines_deleted(lines_deleted_),
-        words_inserted(words_inserted_), words_deleted(words_deleted_){}
+        lines_inserted(lines_inserted_),
+        lines_deleted(lines_deleted_),
+        words_inserted(words_inserted_),
+        words_deleted(words_deleted_),
+        has_diary(has_diary_){}
 
     int num_commits;
     int lines_inserted;
     int lines_deleted;
     int words_inserted;
     int words_deleted;
+    bool has_diary;
 };
+
+struct Query{
+    Query(const json &js):
+        name(js["name"].get<std::string>()),
+        since(js["duration"][0].get<std::string>()),
+        until(js["duration"][1].get<std::string>()){
+        for(const auto &x: js["diary_keywords"])
+            diary_keywords.push_back(x.get<std::string>());
+    }
+
+    std::string name;
+    std::string since;
+    std::string until;
+    std::vector<std::string> diary_keywords;
+};
+
+struct Contributor{
+    Contributor(const json &js):
+        name(js["name"].get<std::string>()),
+        diary(js["diary"].get<std::string>()){
+        for(const auto &x: js["email"])
+            email.push_back(x.get<std::string>());
+        for(const auto &x: js["label"])
+            label.push_back(x.get<std::string>());
+        stats.reserve(64);
+    }
+
+    std::string name;
+    std::vector<std::string> email;
+    std::vector<std::string> label;
+    std::string diary;
+    std::vector<Statistics> stats;
+};
+
 
 bool exec(const char *cmd, std::string &result){
     FILE *pipe = popen(cmd, "r");
@@ -159,16 +172,15 @@ bool get_words_stat(const char *repo_dir, const char *auther_name,
 bool generate_stat(const char *config_dir){
     json js;
     std::ifstream fin(config_dir);
-    FILE *fout;
-    // data
+    FILE *fout, *fp;
+    char buffer[10000];
     std::string repo_dir;
     std::vector<Query> queries;
     std::vector<Contributor> contributors;
-    std::vector<Statistics> statistics[1024];   // statistics[i]: stat for contributor i
     float w_lines_ins, w_lines_del, w_n_commits, w_words_ins, w_words_del; // weights
-    // tmp
     int lines_ins, lines_del, n_commits, words_ins, words_del;
     int net_words_count, weeks_with_commits;
+    bool has_diary;
     time_t raw_time;
     tm *local_time;
 
@@ -196,23 +208,47 @@ bool generate_stat(const char *config_dir){
     w_words_ins = js["weights"]["words_inserted"].get<float>();
     w_words_del = js["weights"]["words_deleted"].get<float>();
 
-    // obtain data
-    for(int i = 0; i < contributors.size(); ++i)
-        statistics[i].reserve(queries.size());
-    for(int i = 0; i < contributors.size(); ++i){
-        printf("(%d/%d) Get data for %s ... ", i + 1, contributors.size(), contributors[i].name.c_str());
-        for(auto &x: queries){
-            for(auto &y: contributors[i].email){
-                get_lines_stat(repo_dir.c_str(), y.c_str(), x.since.c_str(), x.until.c_str(), lines_ins, lines_del, n_commits);
-                get_words_stat(repo_dir.c_str(), y.c_str(), x.since.c_str(), x.until.c_str(), words_ins, words_del);
+    // obtain data (check diary attendance by finding date between "# " ...  "\n" substring)
+    for(auto &x: contributors){
+        printf("Get data for %s ...", x.name.c_str());
+        // check diary
+        fp = fopen((repo_dir + "\\" + x.diary).c_str(), "r");
+        buffer[0] = '\0';
+        if(fp == NULL)
+            printf("(no diary founded)");
+        else{ // store all header in buffer
+            char c1, c2;
+            char *p = buffer;
+            for(c1 = fgetc(fp), c2 = fgetc(fp); c2 != EOF; c1 = c2, c2 = fgetc(fp))
+                if(c1 == '#' && c2 == ' '){
+                    for(*p = fgetc(fp); *p != '\n' && *p != EOF; *(++p) = fgetc(fp));
+                    if(*p == EOF) break;
+                    ++p;
+                    c2 = fgetc(fp);
+                }
+            *p = '\0';
+            fclose(fp);
+            // puts(buffer);
+        }
+        // query
+        for(const auto &y: queries){
+            for(const auto &z: x.email){
+                get_lines_stat(repo_dir.c_str(), z.c_str(), y.since.c_str(), y.until.c_str(), lines_ins, lines_del, n_commits);
+                get_words_stat(repo_dir.c_str(), z.c_str(), y.since.c_str(), y.until.c_str(), words_ins, words_del);
                 if(n_commits != 0)
                     break;
             }
-            statistics[i].push_back(Statistics(n_commits, lines_ins, lines_del, words_ins, words_del));
+            has_diary = false;
+            for(const auto &z: y.diary_keywords)
+                if(strstr(buffer, z.c_str()) != NULL)
+                    has_diary = true;
+            // if(has_diary) putchar('#');
+            // save statistics
+            x.stats.push_back(Statistics(n_commits, lines_ins, lines_del, words_ins, words_del, has_diary));
         }
-        printf("done.\n");
+        puts("done.");
     }
-    
+
     // obtain time
     time(&raw_time);
     local_time = localtime(&raw_time);
@@ -248,6 +284,8 @@ bool generate_stat(const char *config_dir){
     fprintf(fout,
         "<main>"
         "<h1>Statistics of the Commits on Bitbucket</h1>"
+        "<p id=\"notes\">Note that merges won't give unfair points. Also, please follow the file format of diary, otherwise it cannot detect attendence corretly.</p>"
+        "<p>Cells in gray represent missing diary. In diary, please use the date of that lecture.</p>"
         "<table id=\"statistics\">"
         "<tr>"
         "<th onclick=\"sortTable(0)\" class=\"normal\">Authors <i class=\"material-icons\">unfold_more</i></th>"
@@ -260,23 +298,24 @@ bool generate_stat(const char *config_dir){
     fprintf(fout, "<th onclick=\"sortTable(%d)\" class=\"normal\">GIT Score <i class=\"material-icons\">unfold_more</i></th></tr>", 4 + queries.size());
 
     // generate main (table data, end)
-    for(int i = 0; i < contributors.size(); ++i){
-        printf("(%d/%d) Generate statistics for %s\n", i + 1, contributors.size(), contributors[i].name.c_str());
-        fprintf(fout, "<tr><td>%s</td><td>%s</td>", contributors[i].name.c_str(), contributors[i].label[0].c_str());
+    for(const auto &x: contributors){
+        printf("Generate statistics for %s\n", x.name.c_str());
+        fprintf(fout, "<tr><td>%s</td><td>%s</td>", x.name.c_str(), x.label[0].c_str());
         net_words_count = weeks_with_commits = 0;
-        for(int j = 0; j < queries.size(); ++j){
-            fprintf(fout, "<td>%d</td>", statistics[i][j].words_inserted + statistics[i][j].words_deleted);
-            net_words_count += statistics[i][j].words_inserted + statistics[i][j].words_deleted;
-            if(statistics[i][j].num_commits > 0)
+        for(const auto &y: x.stats){
+            if(y.has_diary)
+                fprintf(fout, "<td>%d</td>", y.words_inserted + y.words_deleted);
+            else
+                fprintf(fout, "<td class=\"nodiary\">%d</td>", y.words_inserted + y.words_deleted);
+            net_words_count += y.words_inserted + y.words_deleted;
+            if(y.num_commits > 0)
                 ++weeks_with_commits;
         }
         fprintf(fout, "<td>%d</td><td>%d</td><td>%f</td></tr>", net_words_count, weeks_with_commits, 0.0f); // haven't set rule for total commit score
     }
     fprintf(fout,
         "</table>"
-        "<p id=\"total_authors\">X Total authors: %d</p>" // 0
-        "<p id=\"notes\">Note that merges won't give unfair points.</p>"
-        "</main>",
+        "<p id=\"total_authors\">X Total authors: %d</p>", // 0
         js["contributors"].size()
     );
 
