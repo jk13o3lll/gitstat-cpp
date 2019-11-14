@@ -37,15 +37,13 @@ struct Query{
     Query(const json &js):
         name(js["name"].get<std::string>()),
         since(js["duration"][0].get<std::string>()),
-        until(js["duration"][1].get<std::string>()){
-        for(const auto &x: js["diary_keywords"])
-            diary_keywords.push_back(x.get<std::string>());
-    }
+        until(js["duration"][1].get<std::string>()),
+        attendance_criteria(js["attendance_criteria"].get<int>()){}
 
     std::string name;
     std::string since;
     std::string until;
-    std::vector<std::string> diary_keywords;
+    int attendance_criteria;
 };
 
 struct Contributor{
@@ -98,6 +96,22 @@ int get_int_in_front(const char *p){
     for(int base = 1; *p >= '0' && *p <='9'; --p, base *= 10)
         num += (*p - '0') * base;
     return num;
+}
+int get_date_in_front(const char *p){ // ex. 20120203, -1 is None
+    const char *q = p - 10;
+    int date = 0;
+    char token;
+    if(q[0] < '0' || q[0] > '9')    return -1;  date = date * 10 + q[0] - '0';
+    if(q[1] < '0' || q[1] > '9')    return -1;  date = date * 10 + q[1] - '0';
+    if(q[2] < '0' || q[2] > '9')    return -1;  date = date * 10 + q[2] - '0';
+    if(q[3] < '0' || q[3] > '9')    return -1;  date = date * 10 + q[3] - '0';
+    if(q[4] != '-' && q[4] != ' ' && q[4] != '_')    return -1;  token = q[4];
+    if(q[5] < '0' || q[5] > '9')    return -1;  date = date * 10 + q[5] - '0';
+    if(q[6] < '0' || q[6] > '9')    return -1;  date = date * 10 + q[6] - '0';
+    if(q[7] != token)   return -1;
+    if(q[8] < '0' || q[8] > '9')    return -1;  date = date * 10 + q[8] - '0';
+    if(q[9] < '0' || q[9] > '9')    return -1;  date = date * 10 + q[9] - '0';
+    return date;
 }
 
 bool get_lines_stat(const char *repo_dir, const char *auther_name,
@@ -173,13 +187,15 @@ bool generate_stat(const char *config_dir){
     json js;
     std::ifstream fin(config_dir);
     FILE *fout, *fp;
-    char buffer[10000];
+    char buffer[1001];
     std::string repo_dir;
     std::vector<Query> queries;
     std::vector<Contributor> contributors;
     float w_lines_ins, w_lines_del, w_n_commits, w_words_ins, w_words_del; // weights
     int lines_ins, lines_del, n_commits, words_ins, words_del;
     int net_words_count, weeks_with_commits;
+    std::vector<int> dates;
+    int since, until;
     bool has_diary;
     time_t raw_time;
     tm *local_time;
@@ -217,22 +233,22 @@ bool generate_stat(const char *config_dir){
 #else
         fp = fopen((repo_dir + "/" + x.diary).c_str(), "r");
 #endif
-        buffer[0] = '\0';
+        dates.clear();
         if(fp == NULL)
-            printf("(no diary founded)");
-        else{ // store all header in buffer
-            char c1, c2;
-            char *p = buffer;
-            for(c1 = fgetc(fp), c2 = fgetc(fp); c2 != EOF; c1 = c2, c2 = fgetc(fp))
-                if(c1 == '#' && c2 == ' '){
-                    for(*p = fgetc(fp); *p != '\n' && *p != EOF; *(++p) = fgetc(fp));
-                    if(*p == EOF) break;
-                    ++p;
-                    c2 = fgetc(fp);
+            printf("(no diary founded) ");
+        else{
+            // extract all date in header
+            while(fgets(buffer, 1000, fp) != NULL){
+                if(buffer[0] == '#' && strlen(buffer) > 10){
+                    int tmp;
+                    for(const char *p = buffer + 10; *p != '\0'; ++p){
+                        tmp = get_date_in_front(p);
+                        if(tmp != -1)
+                            dates.push_back(tmp);
+                    }
                 }
-            *p = '\0';
+            }
             fclose(fp);
-            // puts(buffer);
         }
         // query
         for(const auto &y: queries){
@@ -242,11 +258,33 @@ bool generate_stat(const char *config_dir){
                 if(n_commits != 0)
                     break;
             }
-            has_diary = false;
-            for(const auto &z: y.diary_keywords)
-                if(strstr(buffer, z.c_str()) != NULL)
-                    has_diary = true;
-            // if(has_diary) putchar('#');
+            // check attendance
+            if(y.attendance_criteria == 0){
+                has_diary = false;
+                since = get_date_in_front(y.since.c_str() + 10);
+                until = get_date_in_front(y.until.c_str() + 10);
+                for(const auto &d: dates)
+                    if(d >= since && d <= until){
+                        has_diary = true;
+                        break;
+                    }
+            }
+            else if(y.attendance_criteria == 1){
+                has_diary = false;
+                if(n_commits > 0){
+                    since = get_date_in_front(y.since.c_str() + 10);
+                    until = get_date_in_front(y.until.c_str() + 10);
+                    for(const auto &d: dates)
+                        if(d >= since && d <= until){
+                            has_diary = true;
+                            break;
+                        }
+                }
+            }
+            else if(y.attendance_criteria == -1)
+                has_diary = false;
+            else
+                has_diary = true;
             // save statistics
             x.stats.push_back(Statistics(n_commits, lines_ins, lines_del, words_ins, words_del, has_diary));
         }
