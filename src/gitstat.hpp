@@ -212,7 +212,11 @@ bool generate_stat(const char *config_dir){
     for(auto &x: contributors){
         printf("Get data for %s ...", x.name.c_str());
         // check diary
+#if defined(_WIN32) || defined(_WIN64)
         fp = fopen((repo_dir + "\\" + x.diary).c_str(), "r");
+#else
+        fp = fopen((repo_dir + "/" + x.diary).c_str(), "r");
+#endif
         buffer[0] = '\0';
         if(fp == NULL)
             printf("(no diary founded)");
