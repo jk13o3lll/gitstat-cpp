@@ -1,18 +1,7 @@
 # gitstat
 
-There two versions of gitstat.
-
-## V1 (Under developement)
-
-Dependency: Bitbucket API / Github API + libcurl + json parser
-
-Rely on REST API provided by git service. (can get more information)
-
-## V2, V3 (latest version)
-
-Dependency: git + repository at local + json parser
-
 Rely on git and need to have a copy at local.
+Dependency: git, repository at local, json parser
 
 ---
 
@@ -26,6 +15,7 @@ git clone "aaa"
 
 cd "/bbb"
 mkdir "ccc"
+cp /repository/aaa/html/css/style.css /bbb/ccc/css/
 ```
 
 Template configuration file `config.json`. (there should have `.git` flie in `/repository/aaa`.

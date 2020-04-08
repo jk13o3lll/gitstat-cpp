@@ -259,7 +259,7 @@ bool generate_stat(const char *config_dir){
                     break;
             }
             // check attendance
-            if(y.attendance_criteria == 0){
+            if(y.attendance_criteria == 0){ // has diary within duration
                 has_diary = false;
                 since = get_date_in_front(y.since.c_str() + 10);
                 until = get_date_in_front(y.until.c_str() + 10);
@@ -269,7 +269,7 @@ bool generate_stat(const char *config_dir){
                         break;
                     }
             }
-            else if(y.attendance_criteria == 1){
+            else if(y.attendance_criteria == 1){ // has diary within duration & commits within duration
                 has_diary = false;
                 if(n_commits > 0){
                     since = get_date_in_front(y.since.c_str() + 10);
