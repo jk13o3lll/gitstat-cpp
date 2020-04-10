@@ -3,6 +3,7 @@
 // TODO: Statistic of every files per person can be achieved by querying one by one
 // TODO: Fake commit, automatically for too many lines, and load fake commit num from manually record.
 // https://datatables.net/extensions/buttons/examples/initialisation/export.html
+// write css to overwrite some datatables settings
 
 
 // Suggested compiler: GCC (Linux), Mingw-w64 (Windows)
@@ -378,7 +379,9 @@ bool generate_statistics(const char *config){
         "<head>"
             "<meta charset=\"utf-8\"/>"
             "<title>Statistics of %s</title>" // 1
-            "<link rel=\"stylesheet\" type=\"text/css\" href=\"https://cdn.datatables.net/1.10.20/css/jquery.dataTables.css\">"
+            "<link rel=\"stylesheet\" type=\"text/css\" href=\"https://cdn.datatables.net/1.10.20/css/jquery.dataTables.min.css\">" // https://datatables.net/manual/styling/theme-creator
+            "<link rel=\"stylesheet\" type=\"text/css\" href=\"https://cdn.datatables.net/buttons/1.6.1/css/buttons.dataTables.min.css\">"
+            "<link href=\"style.css\" rel=\"stylesheet\" type=\"text/css\">"
         "</head>"
         "<body>"
             "<header>"
@@ -387,7 +390,7 @@ bool generate_statistics(const char *config){
             "</header>"
             "<main>"
                 "<h2>%s</h2>" // 9
-                "<p>Note that merges won't give unfair points. Also, Please follow the file format of diary, otherwise it cannot detect attendence correctly.</p>"
+                "<p>Note that merges won\'t give unfair points. Also, Please follow the file format of diary, otherwise it cannot detect attendence correctly.</p>"
                 "<table id=\"table1\" class=\"display\">",
         js["title"].get<std::string>().c_str(),
         js["title"].get<std::string>().c_str(),
@@ -406,7 +409,7 @@ bool generate_statistics(const char *config){
         words_count_all_queries = commits_all_queries = 0;
         git_score = 0;
         for(const auto &xs: x.stats){
-            fprintf(fp, "<td>%d</td>", 0);
+            fprintf(fp, "<td %s>%d</td>", xs.attendance? " " : " class=\"nd\"", xs.words_inserted + xs.words_deleted);
             if(xs.num_commits > 0){
                 words_count_all_queries += xs.words_inserted + xs.words_deleted;
                 ++commits_all_queries;
@@ -423,12 +426,28 @@ bool generate_statistics(const char *config){
     fprintf(fp, "</table>"
             "</main>"
             "<footer><p id=\"total_authors\">&#x2716; Total authors: %lu</p></footer>"
-            "<script type=\"text/javascript\" src=\"https://code.jquery.com/jquery-3.4.1.js\"></script>"
-            "<script type=\"text/javascript\" charset=\"utf8\" src=\"https://cdn.datatables.net/1.10.20/js/jquery.dataTables.js\"></script>"
-            "<script>$(document).ready(function(){ $('#table1').DataTable(); });</script>"
+            "<script type=\"text/javascript\" src=\"https://code.jquery.com/jquery-3.3.1.js\"></script>"
+            "<script type=\"text/javascript\" charset=\"utf8\" src=\"https://cdn.datatables.net/1.10.20/js/jquery.dataTables.min.js\"></script>"
+            "<script type=\"text/javascript\" charset=\"utf8\" src=\"https://cdn.datatables.net/buttons/1.6.1/js/dataTables.buttons.min.js\"></script>"
+            "<script type=\"text/javascript\" charset=\"utf8\" src=\"https://cdnjs.cloudflare.com/ajax/libs/jszip/3.1.3/jszip.min.js\"></script>"
+            "<script type=\"text/javascript\" charset=\"utf8\" src=\"https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.1.53/pdfmake.min.js\"></script>"
+            "<script type=\"text/javascript\" charset=\"utf8\" src=\"https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.1.53/vfs_fonts.js\"></script>"
+            "<script type=\"text/javascript\" charset=\"utf8\" src=\"https://cdn.datatables.net/buttons/1.6.1/js/buttons.html5.min.js\"></script>"
+            "<script>$(document).ready(function(){"
+                "$(\'#table1\').DataTable({"
+                    "dom: \'Blfrtip\',"// https://datatables.net/reference/option/dom, https://datatables.net/examples/basic_init/dom.html, https://datatables.net/manual/styling/
+                    "buttons: ["
+                        "\'copyHtml5\',"
+                        "{extend:\'excelHtml5\',title:\'%04d%02d%02d_%02d%02d%02d_%s\'},"
+                        "{extend:\'csvHtml5\',title:\'%04d%02d%02d_%02d%02d%02d_%s\'}"
+                    "]"
+                "});"
+            "});</script>"
         "</body>"
         "</html>",
-        contributors.size()
+        contributors.size(),
+        local_time->tm_year + 1900, local_time->tm_mon + 1, local_time->tm_mday, local_time->tm_hour, local_time->tm_min, local_time->tm_sec, js["export"].get<std::string>().c_str(),
+        local_time->tm_year + 1900, local_time->tm_mon + 1, local_time->tm_mday, local_time->tm_hour, local_time->tm_min, local_time->tm_sec, js["export"].get<std::string>().c_str()
     );
     fclose(fp);
     puts("done.");

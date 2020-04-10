@@ -81,16 +81,17 @@
     <script type="text/javascript" src="https://cdn.datatables.net/1.10.16/js/jquery.dataTables.min.js"></script>
      
     <script type="text/javascript">
-        $(function () {
-
-            $("#myDataTalbe").DataTable({
-                searching: false, //關閉filter功能
-                columnDefs: [{
-                    targets: [3],
-                    orderable: false,
-                }]
-            });
-        });
+        $(document).ready(function() {
+            $('#example').DataTable( {
+                dom: 'Bfrtip',
+                buttons: [
+                    'copyHtml5',
+                    'excelHtml5',
+                    'csvHtml5',
+                    'pdfHtml5'
+                ]
+            } );
+        } );
     </script>
 </body>
 </html>

@@ -4,6 +4,8 @@
 #include <regex>
 #include <cstdlib>
 
+#include <stdio.h>
+
 bool find_time(const char *str, time_t &t){
     std::smatch m; // smatch also separate result in each ()
     std::string s(str);
@@ -49,17 +51,19 @@ int main(){
     std::string s;
     time_t t;
     struct tm *timeinfo;
+
+    printf("%c%c%c", 'a', '\0', 'b');
     
-    while (std::getline(std::cin, s)) {
-        if(find_time(s.c_str(), t)){
-            timeinfo = localtime(&t);
-            std::cout << timeinfo->tm_year + 1900 << " "
-                      << timeinfo->tm_mon + 1 << " "
-                      << timeinfo->tm_mday << std::endl;
-        }
-        else
-            std::cout << "No valid date." << std::endl;
-    }
+    // while (std::getline(std::cin, s)) {
+    //     if(find_time(s.c_str(), t)){
+    //         timeinfo = localtime(&t);
+    //         std::cout << timeinfo->tm_year + 1900 << " "
+    //                   << timeinfo->tm_mon + 1 << " "
+    //                   << timeinfo->tm_mday << std::endl;
+    //     }
+    //     else
+    //         std::cout << "No valid date." << std::endl;
+    // }
 
     return 0;
 }
