@@ -14,7 +14,6 @@ using json = nlohmann::json;
 #include <cstdio>   // printf, fopen, popen, ...
 #include <cctype>   // isdigits, ...
 #include <cstring>  // strstr, ...
-#define _XOPEN_SOURCE // for strptime (in Linux)
 #include <ctime>
 
 #include <iostream>
@@ -108,7 +107,7 @@ bool pull_from_repository(const char *repo_dir, const char *git_dir = NULL){
 
 bool get_lines_stat(const char *repo_dir, const char *author_name,
                     const char *since, const char *until,
-                    int &num_commits, int &lines_inserted, int &lines_deleted,
+                    int &num_commits, int &files_changed, int &lines_inserted, int &lines_deleted,
                     const char *pathspec = NULL, const char *git_dir = NULL){
     int len, tmp;
     char cmd[MAX_CMD];
@@ -123,13 +122,14 @@ bool get_lines_stat(const char *repo_dir, const char *author_name,
     if(!exec(cmd, result)) return false;
 
     // xx files changed, xx insertions(+), xx deletions(-)
-    tmp = num_commits = lines_inserted = lines_deleted = 0;
+    tmp = num_commits = files_changed = lines_inserted = lines_deleted = 0;
     for(const char *p= result.c_str(); *p != '\0'; ++p)
         switch(*p){
-            case ',':   tmp = atoi(++p);        break;
-            case '+':   lines_inserted += tmp;  break;
-            case '-':   lines_deleted += tmp;   break;
-            case '\n':  ++num_commits;          break;
+            case ' ':   if(isdigit(p[1])) tmp = atoi(++p);  break;
+            case 'f':   files_changed += tmp;               break;
+            case '+':   lines_inserted += tmp;              break;
+            case '-':   lines_deleted += tmp;               break;
+            case '\n':  ++num_commits;                      break;
         }
     return true;
 }
@@ -204,6 +204,7 @@ bool find_date(const char *str, time_t &t){
             return false;
     }
 
+    // printf("%04d-%02d-%02d\n", year, month, day);
     time(&t);
     timeinfo = localtime(&t);
     timeinfo->tm_year = year - 1900;
@@ -215,7 +216,7 @@ bool find_date(const char *str, time_t &t){
 }
 
 bool generate_statistics(const char *config){
-    FILE *fp;
+    FILE *fp, *ftmp;
     json js;
     char buffer[MAX_BUFFER];
 
@@ -223,14 +224,17 @@ bool generate_statistics(const char *config){
     std::vector<Query> queries;
     std::vector<Contributor> contributors;
     float w[5]; // weights: #commits, lines(+), lines(-), words(+), words(-)
+    int fig2words;
+    std::string pathspec_text, pathspec_figure, pathspec_code;
 
     std::vector<time_t> dates; // hr, min, sec info are rand
     time_t t;
     tm *local_time;
 
-    int num_commtis, lines_inserted, lines_deleted, words_inserted, words_deleted;
-    int net_words_count, weeks_with_commits;
     bool has_diary;
+    int tmp, num_commtis, files_changed, lines_inserted, lines_deleted, words_inserted, words_deleted;
+    int net_files_changed, net_lines_inserted, net_lines_deleted, net_words_inserted, net_words_deleted;
+    int words_count_all_queries, commits_all_queries;
 
     // load configuration
     fp = fopen(config, "r");
@@ -257,13 +261,17 @@ bool generate_statistics(const char *config){
     w[2] = js["weights"]["lines deleted"].get<float>();
     w[3] = js["weights"]["words inserted"].get<float>();
     w[4] = js["weights"]["words deleted"].get<float>();
+    fig2words = js["weights"]["figure to words inserted"].get<int>();
+    pathspec_text = js["pathspec"]["text"].get<std::string>();
+    pathspec_figure = js["pathspec"]["figure"].get<std::string>();
+    pathspec_code = js["pathspec"]["code"].get<std::string>();
 
     // get statistics
     for(auto &x: contributors){
         printf("Get data for %s ...", x.name.c_str());
         // check diary
         fp = fopen((repo_dir + "/" + x.diary).c_str(), "r");
-        if(fp == NULL) printf("(no diary dounded) ");
+        if(fp == NULL) printf("(no diary founded) ");
         else{
             // extract all date in header
             dates.clear();
@@ -274,24 +282,44 @@ bool generate_statistics(const char *config){
             }
             fclose(fp);
         }
+        // querying
+        words_count_all_queries = commits_all_queries = 0;
         for(const auto &q: queries){
+            net_lines_inserted = net_lines_deleted = net_words_inserted = net_words_deleted = 0;
             // get lines and words statistics
             for(const auto &name: x.email){
-                get_lines_stat(
-                    repo_dir.c_str(), name.c_str(), q.since.c_str(), q.until.c_str(),
-                    lines_inserted, lines_deleted, num_commtis
-                    // pathspec...
-                );
-                get_words_stat(
-                    repo_dir.c_str(), name.c_str(), q.since.c_str(), q.until.c_str(),
-                    words_inserted, words_deleted
-                    // pathspec...
-                );
-                if(num_commtis != 0) break; // until find one valid name
+                // all
+                get_lines_stat(repo_dir.c_str(), name.c_str(),
+                    q.since.c_str(), q.until.c_str(),
+                    num_commtis, files_changed, lines_inserted, lines_deleted);
+                if(num_commtis != 0){
+                    // text
+                    get_lines_stat(repo_dir.c_str(), name.c_str(), q.since.c_str(), q.until.c_str(),
+                        tmp, files_changed, lines_inserted, lines_deleted, pathspec_text.c_str());
+                    get_words_stat(repo_dir.c_str(), name.c_str(), q.since.c_str(), q.until.c_str(),
+                        words_inserted, words_deleted, pathspec_text.c_str());
+                    net_lines_inserted += lines_inserted;
+                    net_lines_deleted += lines_deleted;
+                    net_words_inserted += words_inserted;
+                    net_words_deleted += words_deleted;
+                    // figure
+                    get_lines_stat(repo_dir.c_str(), name.c_str(), q.since.c_str(), q.until.c_str(),
+                        tmp, files_changed, lines_inserted, lines_deleted, pathspec_text.c_str());
+                    net_words_inserted += files_changed * fig2words;
+                    // code
+                    get_lines_stat(repo_dir.c_str(), name.c_str(), q.since.c_str(), q.until.c_str(),
+                        tmp, files_changed, lines_inserted, lines_deleted, pathspec_code.c_str());
+                    get_words_stat(repo_dir.c_str(), name.c_str(), q.since.c_str(), q.until.c_str(),
+                        words_inserted, words_deleted, pathspec_code.c_str());
+                    net_lines_inserted += lines_inserted;
+                    net_lines_deleted += lines_deleted;
+                    net_words_inserted += words_inserted;
+                    net_words_deleted += words_deleted;
+                    break; // until find one valid name
+                }
             }
             // check attendane
             if(q.attendance_criteria == 0){ // only date in diary
-
 
             }
             else if(q.attendance_criteria == 1){ // date in diary & commit in duration
@@ -299,9 +327,17 @@ bool generate_statistics(const char *config){
             }
             else if(q.attendance_criteria == -1)    has_diary = false;
             else                                    has_diary = true;
-
+            
+            x.stats.push_back(Statistics(
+                num_commtis, net_lines_inserted, net_lines_deleted,
+                net_words_inserted, net_words_deleted, has_diary
+            ));
+            printf("\n%s, %s: %d commits, L+%d, L-%d, W+%d, W-%d",
+                x.name.c_str(), q.name.c_str(), num_commtis,
+                net_lines_inserted, net_lines_deleted,
+                net_words_inserted, net_words_deleted);
         }
-        puts("done.");
+        puts("\ndone.");
     }
 
     // obtain time
