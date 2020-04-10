@@ -4,6 +4,7 @@
 // TODO: Fake commit, automatically for too many lines, and load fake commit num from manually record.
 
 // Suggested compiler: GCC (Linux), Mingw-w64 (Windows)
+// git shortlog -s -e [-c]  to get all authors
 
 #ifndef __GITSTAT_HPP__
 #define __GITSTAT_HPP__
@@ -57,6 +58,7 @@ struct Query{
     std::string since;
     std::string until;
     int attendance_criteria;
+    time_t t0, t1; // since, until
 };
 
 struct Contributor{
@@ -204,8 +206,8 @@ bool find_date(const char *str, time_t &t){
             return false;
     }
 
-    // printf("%04d-%02d-%02d\n", year, month, day);
-    time(&t);
+    printf("%04d-%02d-%02d\n", year, month, day);
+    time(&t); // set to zero, instead of current time
     timeinfo = localtime(&t);
     timeinfo->tm_year = year - 1900;
     timeinfo->tm_mon = month - 1;
@@ -228,7 +230,7 @@ bool generate_statistics(const char *config){
     std::string pathspec_text, pathspec_figure, pathspec_code;
 
     std::vector<time_t> dates; // hr, min, sec info are rand
-    time_t t;
+    time_t t0, t1;
     tm *local_time;
 
     bool has_diary;
@@ -277,8 +279,8 @@ bool generate_statistics(const char *config){
             dates.clear();
             while(fgets(buffer, MAX_BUFFER, fp) != NULL){
                 if(buffer[0] == '#' && strlen(buffer) > 8)
-                    if(find_date(buffer, t))
-                        dates.push_back(t);
+                    if(find_date(buffer, t0))
+                        dates.push_back(t0);
             }
             fclose(fp);
         }
@@ -319,30 +321,45 @@ bool generate_statistics(const char *config){
                 }
             }
             // check attendane
+            if(!find_date(q.since.c_str(), t0) || !find_date(q.until.c_str(), t1)){
+                printf("Failed to parse since and until in query: %s\n", q.name.c_str());
+                js.clear();
+                return false;
+            }
+            has_diary = false;
             if(q.attendance_criteria == 0){ // only date in diary
-
+                for(const auto &d: dates)
+                    if(difftime(d, t0) > 0 && difftime(d, t1) < 0){
+                        has_diary = true;
+                        break;
+                    }
             }
             else if(q.attendance_criteria == 1){ // date in diary & commit in duration
-
+                if(num_commtis > 0)
+                    for(const auto &d: dates)
+                        if(difftime(d, t0) > 0 && difftime(d, t1) < 0){
+                            has_diary = true;
+                            break;
+                        }
             }
-            else if(q.attendance_criteria == -1)    has_diary = false;
-            else                                    has_diary = true;
+            else if(q.attendance_criteria != -1) has_diary = true;
             
             x.stats.push_back(Statistics(
                 num_commtis, net_lines_inserted, net_lines_deleted,
                 net_words_inserted, net_words_deleted, has_diary
             ));
-            printf("\n%s, %s: %d commits, L+%d, L-%d, W+%d, W-%d",
+            printf("\n%s, %s: %d commits, L+%d, L-%d, W+%d, W-%d, %s diary",
                 x.name.c_str(), q.name.c_str(), num_commtis,
                 net_lines_inserted, net_lines_deleted,
-                net_words_inserted, net_words_deleted);
+                net_words_inserted, net_words_deleted,
+                has_diary? "has" : "no");
         }
         puts("\ndone.");
     }
 
     // obtain time
-    time(&t);
-    local_time = localtime(&t);
+    time(&t0);
+    local_time = localtime(&t0);
 
     // generate html
     fp = fopen(js["html"].get<std::string>().c_str(), "w");
@@ -366,9 +383,19 @@ bool generate_statistics(const char *config){
 }
 
 // bool generate_deatils_of_contribution(){} // user's contribution on every files
+// use git ls-flies to get all filenames (cached and deleted), query those file name to every author
+// contribution to deleted files?
+
+// list all file name (unique) by author
+// git log --pretty=format: --name-only --author="..." --since=... --until=... -- "*.tex" | sort -u
+// for the filename (get lines stat and get words stats)
+
+
 
 // bool remove_fake_commit(){} // load fake commit id from file (manually record in json), and then count lines and words in that commit and subtract from total
-
 // bool detect_potential_fake_commit(){} // too many lines in one commit, ...
 
 #endif // __GITSTAT_HPP__
+
+
+
