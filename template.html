@@ -13,36 +13,14 @@
         <main>
             <h2>GITSTAT_NAME</h2>
             <p>Note that merges won't give unfair points. Also, Please follow the file format of diary, otherwise it cannot detect attendence correctly.</p>
-            <!-- Table -->
-            GITSTAT_TABLE
-            <table id="table_id" class="display">
-                <thead>
-                    <tr>
-                        <th>Column 1</th>
-                        <th>Column 2</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr>
-                        <td>Row 1 Data 1</td>
-                        <td>Row 1 Data 2</td>
-                    </tr>
-                    <tr>
-                        <td>Row 2 Data 1</td>
-                        <td>Row 2 Data 2</td>
-                    </tr>
-                </tbody>
+            <table id="table1" class="display">
+                GITSTAT_TABLE
             </table>
         </main>
         <footer></footer>
 
         <script type="text/javascript" src="https://code.jquery.com/jquery-3.4.1.js"></script>
         <script type="text/javascript" charset="utf8" src="https://cdn.datatables.net/1.10.20/js/jquery.dataTables.js"></script>
-
-        <script>
-            $(document).ready(function(){
-                $('#table_id').DataTable();
-            });
-        </script>
+        <script>$(document).ready(function(){ $('#table1').DataTable(); });</script>
     </body>
 </html>

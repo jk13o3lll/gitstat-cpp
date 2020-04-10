@@ -2,9 +2,14 @@
 // TODO: Attendance based on diary, (1) check date (#YYYYMMDD or #YYYY-MM-DD) in diary (2) changes for diary in duration
 // TODO: Statistic of every files per person can be achieved by querying one by one
 // TODO: Fake commit, automatically for too many lines, and load fake commit num from manually record.
+// https://datatables.net/extensions/buttons/examples/initialisation/export.html
+
 
 // Suggested compiler: GCC (Linux), Mingw-w64 (Windows)
+
 // git shortlog -s -e [-c]  to get all authors
+// Include *.txt, *.md: git log ... -- "*.txt" "some_dir/*.md" "some_dir2"
+// Exclude *.txt (case insensitve): git log ... -- ":(exclude,icase)*.txt"
 
 #ifndef __GITSTAT_HPP__
 #define __GITSTAT_HPP__
@@ -25,8 +30,6 @@ using json = nlohmann::json;
 #define MAX_CMD 1024
 #define MAX_BUFFER 1024
 
-// Include *.txt, *.md: git log ... -- "*.txt" "some_dir/*.md" "some_dir2"
-// Exclude *.txt (case insensitve): git log ... -- ":(exclude,icase)*.txt"
 
 
 struct Statistics{
@@ -175,13 +178,14 @@ bool get_words_stat(const char *repo_dir, const char *author_name,
     return true;
 }
 
-bool find_date(const char *str, time_t &t){
+bool find_date(const char *str, int &date){ // YYYYMMDD
     std::smatch m; // smatch also separate result in each ()
     std::string s(str);
     std::regex e1("(\\d{4})(\\d{2})(\\d{2})");
     std::regex e2("(\\d{4})(-|/)(\\d{1,2})(-|/)(\\d{1,2})");
     int year, month, day;
     struct tm *timeinfo;
+    
 
     if(std::regex_search (s,m,e1)){ // find first one
         year = atoi(m.str(1).c_str());
@@ -206,15 +210,17 @@ bool find_date(const char *str, time_t &t){
             return false;
     }
 
-    printf("%04d-%02d-%02d\n", year, month, day);
-    time(&t); // set to zero, instead of current time
-    timeinfo = localtime(&t);
-    timeinfo->tm_year = year - 1900;
-    timeinfo->tm_mon = month - 1;
-    timeinfo->tm_mday = day;
-    t = mktime(timeinfo); // timeinfo->tm_wday and tm_yday will be set
+    // printf("%04d-%02d-%02d\n", year, month, day);
+    date = year * 10000 + month * 100 + day;
+    return true;
 
-    return t != -1;
+    // time(&t); // set to zero, instead of current time
+    // timeinfo = localtime(&t);
+    // timeinfo->tm_year = year - 1900;
+    // timeinfo->tm_mon = month - 1;
+    // timeinfo->tm_mday = day;
+    // t = mktime(timeinfo); // timeinfo->tm_wday and tm_yday will be set
+    // return t != -1;
 }
 
 bool generate_statistics(const char *config){
@@ -229,14 +235,16 @@ bool generate_statistics(const char *config){
     int fig2words;
     std::string pathspec_text, pathspec_figure, pathspec_code;
 
-    std::vector<time_t> dates; // hr, min, sec info are rand
-    time_t t0, t1;
+    std::vector<int> dates;
+    int t0, t1;
+    time_t raw_time;
     tm *local_time;
 
     bool has_diary;
     int tmp, num_commtis, files_changed, lines_inserted, lines_deleted, words_inserted, words_deleted;
     int net_files_changed, net_lines_inserted, net_lines_deleted, net_words_inserted, net_words_deleted;
     int words_count_all_queries, commits_all_queries;
+    float git_score;
 
     // load configuration
     fp = fopen(config, "r");
@@ -329,18 +337,12 @@ bool generate_statistics(const char *config){
             has_diary = false;
             if(q.attendance_criteria == 0){ // only date in diary
                 for(const auto &d: dates)
-                    if(difftime(d, t0) > 0 && difftime(d, t1) < 0){
-                        has_diary = true;
-                        break;
-                    }
+                    if(d >= t0 && d <= t0){ has_diary = true; break; }
             }
             else if(q.attendance_criteria == 1){ // date in diary & commit in duration
                 if(num_commtis > 0)
                     for(const auto &d: dates)
-                        if(difftime(d, t0) > 0 && difftime(d, t1) < 0){
-                            has_diary = true;
-                            break;
-                        }
+                        if(d >= t0 && d <= t0){ has_diary = true; break; }
             }
             else if(q.attendance_criteria != -1) has_diary = true;
             
@@ -348,7 +350,7 @@ bool generate_statistics(const char *config){
                 num_commtis, net_lines_inserted, net_lines_deleted,
                 net_words_inserted, net_words_deleted, has_diary
             ));
-            printf("\n%s, %s: %d commits, L+%d, L-%d, W+%d, W-%d, %s diary",
+            printf("\n  %s, %s: %d commits, L+%d, L-%d, W+%d, W-%d, %s diary",
                 x.name.c_str(), q.name.c_str(), num_commtis,
                 net_lines_inserted, net_lines_deleted,
                 net_words_inserted, net_words_deleted,
@@ -358,9 +360,10 @@ bool generate_statistics(const char *config){
     }
 
     // obtain time
-    time(&t0);
-    local_time = localtime(&t0);
+    time(&raw_time);
+    local_time = localtime(&raw_time);
 
+    printf("Generate html ...");
     // generate html
     fp = fopen(js["html"].get<std::string>().c_str(), "w");
     if(fp == NULL){
@@ -368,16 +371,68 @@ bool generate_statistics(const char *config){
         js.clear();
         return false;
     }
-    // 1. generate header
-
-    // 2. generate main (things before table)
-
-    // 3. generate table
-
-    // 4. generate residual parts (footer)
-
-
+    // generate file
+    fprintf(fp,
+        "<!DOCTYPE html>"
+        "<html>"
+        "<head>"
+            "<meta charset=\"utf-8\"/>"
+            "<title>Statistics of %s</title>" // 1
+            "<link rel=\"stylesheet\" type=\"text/css\" href=\"https://cdn.datatables.net/1.10.20/css/jquery.dataTables.css\">"
+        "</head>"
+        "<body>"
+            "<header>"
+                "<h1>%s</h1>" // 2
+                "<p>Accessed at %04d-%02d-%02d %02d:%02d:%02d from git repository.</p>" // 3, 4, 5, 6, 7, 8
+            "</header>"
+            "<main>"
+                "<h2>%s</h2>" // 9
+                "<p>Note that merges won't give unfair points. Also, Please follow the file format of diary, otherwise it cannot detect attendence correctly.</p>"
+                "<table id=\"table1\" class=\"display\">",
+        js["title"].get<std::string>().c_str(),
+        js["title"].get<std::string>().c_str(),
+        local_time->tm_year + 1900, local_time->tm_mon + 1, local_time->tm_mday, local_time->tm_hour, local_time->tm_min, local_time->tm_sec,
+        js["subtitle"].get<std::string>().c_str()
+    );
+    // column heads
+    fprintf(fp, "<thead><tr><th>Authors</th><th>Semester</th>");
+    for(int i = 0; i < queries.size(); ++i)
+        fprintf(fp, "<th>%s</th>", queries[i].name.c_str());
+    fprintf(fp, "<th>Net<br/>words count</th><th>Weeks<br/>with commits</th><th>GIT Score</th></tr></thead>");
+    // contents
+    fprintf(fp, "<tbody>");
+    for(const auto &x: contributors){
+        fprintf(fp, "<tr><td>%s</td><td>%s</td>", x.name.c_str(), x.label[0].c_str());
+        words_count_all_queries = commits_all_queries = 0;
+        git_score = 0;
+        for(const auto &xs: x.stats){
+            fprintf(fp, "<td>%d</td>", 0);
+            if(xs.num_commits > 0){
+                words_count_all_queries += xs.words_inserted + xs.words_deleted;
+                ++commits_all_queries;
+                git_score += w[0] * xs.num_commits
+                       + w[1] * xs.lines_inserted + w[2] * xs.lines_deleted
+                       + w[3] * xs.words_inserted + w[4] * xs.words_deleted;
+            }
+        }
+        fprintf(fp, "<td>%d</td><td>%d</td><td>%.2f</td></tr>",
+            words_count_all_queries, commits_all_queries, git_score);
+    }
+    fprintf(fp, "</tbody>");
+    // residual
+    fprintf(fp, "</table>"
+            "</main>"
+            "<footer><p id=\"total_authors\">&#x2716; Total authors: %lu</p></footer>"
+            "<script type=\"text/javascript\" src=\"https://code.jquery.com/jquery-3.4.1.js\"></script>"
+            "<script type=\"text/javascript\" charset=\"utf8\" src=\"https://cdn.datatables.net/1.10.20/js/jquery.dataTables.js\"></script>"
+            "<script>$(document).ready(function(){ $('#table1').DataTable(); });</script>"
+        "</body>"
+        "</html>",
+        contributors.size()
+    );
     fclose(fp);
+    puts("done.");
+
     js.clear();
     return true;
 }
