@@ -1,16 +1,21 @@
-// TODO: use jquery plugin DataTables to present table
-// TODO: Attendance based on diary, (1) check date (#YYYYMMDD or #YYYY-MM-DD) in diary (2) changes for diary in duration
-// TODO: Statistic of every files per person can be achieved by querying one by one
-// TODO: Fake commit, automatically for too many lines, and load fake commit num from manually record.
-// https://datatables.net/extensions/buttons/examples/initialisation/export.html
+// TODO:
+// Fake commit, automatically for too many lines, and load fake commit num from manually record.
 // write css to overwrite some datatables settings
 
+// Problems:
+// count the files no mater deleted, rename?
+// words count to code is unfair
 
-// Suggested compiler: GCC (Linux), Mingw-w64 (Windows)
-
+// Notes:
+// .m is code, .mat is data
 // git shortlog -s -e [-c]  to get all authors
 // Include *.txt, *.md: git log ... -- "*.txt" "some_dir/*.md" "some_dir2"
 // Exclude *.txt (case insensitve): git log ... -- ":(exclude,icase)*.txt"
+// "attedance (query id)" is for manually label the attendance at each query
+// invalid commits by all - commits included
+
+
+// Suggested compiler: GCC (Linux), Mingw-w64 (Windows)
 
 #ifndef __GITSTAT_HPP__
 #define __GITSTAT_HPP__
@@ -29,9 +34,7 @@ using json = nlohmann::json;
 #include <regex>
 
 #define MAX_CMD 1024
-#define MAX_BUFFER 1024
-
-
+#define MAX_BUFFER 65536
 
 struct Statistics{
     Statistics(int num_commits_, int lines_inserted_, int lines_deleted_,
@@ -81,7 +84,9 @@ struct Contributor{
     std::vector<std::string> label;
     std::string diary;
     std::vector<Statistics> stats;
-    // "attedance (query id)" is for manually label the attendanc at each query
+
+    std::vector<std::string> filenames;
+    std::vector<Statistics> filesstat;
 };
 
 bool exec(const char *cmd, std::string &result){
@@ -111,6 +116,28 @@ bool pull_from_repository(const char *repo_dir, const char *git_dir = NULL){
     return true;
 }
 
+bool get_num_commits(const char *repo_dir, const char *author_name, const char *since, const char *until,
+                    int &num_commits, const char *pathspec = NULL, const char *git_dir = NULL){
+    int len, tmp;
+    char cmd[MAX_CMD];
+    std::string result;
+
+    num_commits = 0;
+
+    len = sprintf(cmd, "git -C \"%s\" --git-dir=\"%s\" --no-pager "
+        "shortlog -s --author=\"%s\" --no-merges",
+        repo_dir, git_dir != NULL? git_dir : ".git", author_name);
+    if(since != NULL)   len += sprintf(cmd + len, " --since=\"%s\"", since);
+    if(until != NULL)   len += sprintf(cmd + len, " --until=\"%s\"", until);
+    if(pathspec != NULL)len += sprintf(cmd + len, " -- %s", pathspec);
+    if(!exec(cmd, result)) return false;
+
+    //   n1  name1
+    if(result.length() > 0)
+        num_commits = atoi(result.c_str());
+    return true;
+}
+
 bool get_lines_stat(const char *repo_dir, const char *author_name,
                     const char *since, const char *until,
                     int &num_commits, int &files_changed, int &lines_inserted, int &lines_deleted,
@@ -118,6 +145,8 @@ bool get_lines_stat(const char *repo_dir, const char *author_name,
     int len, tmp;
     char cmd[MAX_CMD];
     std::string result;
+
+    num_commits = files_changed = lines_inserted = lines_deleted = 0;
 
     len = sprintf(cmd, "git -C \"%s\" --git-dir=\"%s\" --no-pager log "
         "--date=local --pretty=\"\" --shortstat --author=\"%s\" --no-merges",
@@ -128,7 +157,7 @@ bool get_lines_stat(const char *repo_dir, const char *author_name,
     if(!exec(cmd, result)) return false;
 
     // xx files changed, xx insertions(+), xx deletions(-)
-    tmp = num_commits = files_changed = lines_inserted = lines_deleted = 0;
+    tmp = 0;
     for(const char *p= result.c_str(); *p != '\0'; ++p)
         switch(*p){
             case ' ':   if(isdigit(p[1])) tmp = atoi(++p);  break;
@@ -149,6 +178,8 @@ bool get_words_stat(const char *repo_dir, const char *author_name,
     std::string result;
     bool newline; // previous char is '\n'
 
+    words_inserted = words_deleted = 0;
+
     len = sprintf(cmd, "git -C \"%s\" --git-dir=\"%s\" --no-pager log "
         "--date=local --pretty=\"\" -p --word-diff=porcelain --author=\"%s\" --no-merges",
         repo_dir, git_dir != NULL? git_dir : ".git", author_name);
@@ -159,22 +190,54 @@ bool get_words_stat(const char *repo_dir, const char *author_name,
 
     // \n+... (add), \n-... (delete), \n' ' (no change)
     newline = true;
-    words_inserted = words_deleted = 0;
     for(const char *p = result.c_str(); *p != '\0'; ++p){
         if(newline){
             if(*p == '+'){
                 for(++p; *p != '\n' && *p !='\0'; ++p)
-                    if(isalnum(p[0]) && !isalnum(p[1]))
-                        ++words_inserted;
+                    if(!isspace(p[0]) && (isspace(p[1]) || p[1] == '\0')) ++words_inserted;
+                    // if(isalnum(p[0]) && !isalnum(p[1])) ++words_inserted;
             }
             else if(*p == '-'){
                 for(++p; *p != '\n' && *p !='\0'; ++p)
-                    if(isalnum(p[0]) && !isalnum(p[1]))
-                        ++words_deleted;
+                    if(!isspace(p[0]) && (isspace(p[1]) || p[1] == '\0')) ++words_deleted;
+                    // if(isalnum(p[0]) && !isalnum(p[1])) ++words_deleted;
             }
             else if(*p != '\n') newline = false;
         }
         else if(*p == '\n') newline = true;
+    }
+    return true;
+}
+
+bool get_files_list(const char *repo_dir, const char *author_name, const char *since, const char *until,
+                    std::vector<std::string> &files, const char *pathspec = NULL, const char *git_dir = NULL, bool withquotes = false){
+    int len, tmp, i;
+    char cmd[MAX_CMD];
+    std::string result;
+
+    // git log --pretty="" --name-only --author="..." --since=... --until=... -- "*.tex" | sort -u
+    // git --no-pager log --pretty="" --name-only --author="..." --no-merges -- "*.png" | sort -u
+
+    len = sprintf(cmd, "git -C \"%s\" --git-dir=\"%s\" --no-pager log "
+        "--date=local --pretty=\"\" --name-only --author=\"%s\" --no-merges",
+        repo_dir, git_dir != NULL? git_dir : ".git", author_name);
+    if(since != NULL)   len += sprintf(cmd + len, " --since=\"%s\"", since);
+    if(until != NULL)   len += sprintf(cmd + len, " --until=\"%s\"", until);
+    if(pathspec != NULL)len += sprintf(cmd + len, " -- %s", pathspec);
+    len += sprintf(cmd + len, " | sort -u"); // sort and unique
+    if(!exec(cmd, result)) return false;
+
+    // filename \n
+    files.clear();
+    tmp = len = i = 0;
+    for(const char *p = result.c_str(); *p != '\0'; ++p, ++i){
+        if(*p == '\n'){
+            if(withquotes)  files.push_back("\"" + result.substr(tmp, len) + "\"");
+            else            files.push_back(result.substr(tmp, len));
+            tmp = i + 1;
+            len = 0;
+        }
+        else  ++len;
     }
     return true;
 }
@@ -224,8 +287,8 @@ bool find_date(const char *str, int &date){ // YYYYMMDD
     // return t != -1;
 }
 
-bool generate_statistics(const char *config){
-    FILE *fp, *ftmp;
+bool generate_statistics_queries(const char *config){
+    FILE *fp;
     json js;
     char buffer[MAX_BUFFER];
 
@@ -234,7 +297,7 @@ bool generate_statistics(const char *config){
     std::vector<Contributor> contributors;
     float w[5]; // weights: #commits, lines(+), lines(-), words(+), words(-)
     int fig2words;
-    std::string pathspec_text, pathspec_figure, pathspec_code;
+    std::string pathspec_text, pathspec_figure, pathspec_code, pathspec_include, pathspec_diary;
 
     std::vector<int> dates;
     int t0, t1;
@@ -242,7 +305,7 @@ bool generate_statistics(const char *config){
     tm *local_time;
 
     bool has_diary;
-    int tmp, num_commtis, files_changed, lines_inserted, lines_deleted, words_inserted, words_deleted;
+    int tmp, num_commits, files_changed, lines_inserted, lines_deleted, words_inserted, words_deleted;
     int net_files_changed, net_lines_inserted, net_lines_deleted, net_words_inserted, net_words_deleted;
     int words_count_all_queries, commits_all_queries;
     float git_score;
@@ -261,7 +324,7 @@ bool generate_statistics(const char *config){
     pull_from_repository(repo_dir.c_str());
 
     // extract more info
-    printf("%lu queries, %lu contributors\n\n",
+    printf("%lu queries, %lu contributors\n",
         js["queries"].size(), js["contributors"].size());
     for(const auto &x: js["queries"])
         queries.push_back(Query(x));
@@ -276,13 +339,17 @@ bool generate_statistics(const char *config){
     pathspec_text = js["pathspec"]["text"].get<std::string>();
     pathspec_figure = js["pathspec"]["figure"].get<std::string>();
     pathspec_code = js["pathspec"]["code"].get<std::string>();
+    pathspec_include = pathspec_text + " " + pathspec_figure + " " + pathspec_code;
 
     // get statistics
     for(auto &x: contributors){
         printf("Get data for %s ...", x.name.c_str());
         // check diary
         fp = fopen((repo_dir + "/" + x.diary).c_str(), "r");
-        if(fp == NULL) printf("(no diary founded) ");
+        if(fp == NULL){
+            printf("(no diary founded) ");
+            pathspec_diary = "\"*\"";
+        }
         else{
             // extract all date in header
             dates.clear();
@@ -292,18 +359,19 @@ bool generate_statistics(const char *config){
                         dates.push_back(t0);
             }
             fclose(fp);
+            pathspec_diary = "\"" + x.diary + "\"";
         }
         // querying
+        x.stats.clear();
         words_count_all_queries = commits_all_queries = 0;
         for(const auto &q: queries){
             net_lines_inserted = net_lines_deleted = net_words_inserted = net_words_deleted = 0;
             // get lines and words statistics
             for(const auto &name: x.email){
                 // all
-                get_lines_stat(repo_dir.c_str(), name.c_str(),
-                    q.since.c_str(), q.until.c_str(),
-                    num_commtis, files_changed, lines_inserted, lines_deleted);
-                if(num_commtis != 0){
+                get_num_commits(repo_dir.c_str(), name.c_str(), q.since.c_str(), q.until.c_str(),
+                    num_commits, pathspec_include.c_str());
+                if(num_commits != 0){
                     // text
                     get_lines_stat(repo_dir.c_str(), name.c_str(), q.since.c_str(), q.until.c_str(),
                         tmp, files_changed, lines_inserted, lines_deleted, pathspec_text.c_str());
@@ -341,18 +409,26 @@ bool generate_statistics(const char *config){
                     if(d >= t0 && d <= t0){ has_diary = true; break; }
             }
             else if(q.attendance_criteria == 1){ // date in diary & commit in duration
-                if(num_commtis > 0)
+                if(num_commits > 0)
                     for(const auto &d: dates)
                         if(d >= t0 && d <= t0){ has_diary = true; break; }
+            }
+            else if(q.attendance_criteria == 2){
+                // by git log --since --until --author -- diary.md
+                for(const auto &name: x.email){
+                    get_num_commits(repo_dir.c_str(), name.c_str(), q.since.c_str(), q.until.c_str(),
+                        tmp, pathspec_diary.c_str());
+                    if(tmp > 0){ has_diary = true; break; }
+                }
             }
             else if(q.attendance_criteria != -1) has_diary = true;
             
             x.stats.push_back(Statistics(
-                num_commtis, net_lines_inserted, net_lines_deleted,
+                num_commits, net_lines_inserted, net_lines_deleted,
                 net_words_inserted, net_words_deleted, has_diary
             ));
             printf("\n  %s, %s: %d commits, L+%d, L-%d, W+%d, W-%d, %s diary",
-                x.name.c_str(), q.name.c_str(), num_commtis,
+                x.name.c_str(), q.name.c_str(), num_commits,
                 net_lines_inserted, net_lines_deleted,
                 net_words_inserted, net_words_deleted,
                 has_diary? "has" : "no");
@@ -456,14 +532,193 @@ bool generate_statistics(const char *config){
     return true;
 }
 
-// bool generate_deatils_of_contribution(){} // user's contribution on every files
-// use git ls-flies to get all filenames (cached and deleted), query those file name to every author
-// contribution to deleted files?
+bool generate_statistics_summary(const char *config){
+    FILE *fp, *ftmp;
+    json js;
+    char buffer[MAX_BUFFER];
 
-// list all file name (unique) by author
-// git log --pretty=format: --name-only --author="..." --since=... --until=... -- "*.tex" | sort -u
-// for the filename (get lines stat and get words stats)
+    std::string repo_dir;
+    std::vector<Contributor> contributors;
 
+    float w[5]; // weights: #commits, lines(+), lines(-), words(+), words(-)
+    int fig2words;
+    std::string pathspec_text, pathspec_figure, pathspec_code, pathspec_textcode, pathspec_include;
+
+    time_t raw_time;
+    tm *local_time;
+
+    std::vector<std::string> files;
+    int tmp, num_commits, files_changed;
+    int lines_inserted, lines_deleted, words_inserted, words_deleted;
+    int net_lines_inserted, net_lines_deleted, net_words_inserted, net_words_deleted;
+    float git_score;
+
+    // load configuration
+    fp = fopen(config, "r");
+    if(fp == NULL){
+        printf("Failed to load config file.\n");
+        return false;
+    }
+    js = json::parse(fp);
+    fclose(fp);
+
+    // extract repo dir and update
+    repo_dir = js["repository"].get<std::string>();
+    pull_from_repository(repo_dir.c_str());
+
+    // extract more info
+    printf("%lu contributors\n\n", js["contributors"].size());
+    for(const auto &x: js["contributors"])
+        contributors.push_back(Contributor(x));
+    w[0] = js["weights"]["num commits"].get<float>();
+    w[1] = js["weights"]["lines inserted"].get<float>();
+    w[2] = js["weights"]["lines deleted"].get<float>();
+    w[3] = js["weights"]["words inserted"].get<float>();
+    w[4] = js["weights"]["words deleted"].get<float>();
+    fig2words = js["weights"]["figure to words inserted"].get<int>();
+    pathspec_text = js["pathspec"]["text"].get<std::string>();
+    pathspec_figure = js["pathspec"]["figure"].get<std::string>();
+    pathspec_code = js["pathspec"]["code"].get<std::string>();
+    pathspec_textcode = pathspec_text + " " + pathspec_code;
+    pathspec_include = pathspec_text + " " + pathspec_figure + " " + pathspec_code;
+
+    // get statistics
+    for(auto &x: contributors){
+        printf("Get data for %s ...", x.name.c_str());
+        x.stats.clear();
+        net_words_inserted = net_words_deleted = 0;
+        git_score = 0.0f;
+        for(auto &name: x.email){
+            // get num_commits
+            get_num_commits(repo_dir.c_str(), name.c_str(), NULL, NULL, num_commits, pathspec_include.c_str());
+            if(num_commits > 0){
+                // get total
+                get_lines_stat(repo_dir.c_str(), name.c_str(), NULL, NULL, tmp, tmp, net_lines_inserted, net_lines_deleted, pathspec_textcode.c_str());
+                // get text files detail
+                get_files_list(repo_dir.c_str(), name.c_str(), NULL, NULL, files, pathspec_text.c_str(), NULL, true);
+                for(auto &f: files){
+                    get_lines_stat(repo_dir.c_str(), name.c_str(), NULL, NULL, tmp, files_changed, lines_inserted, lines_deleted, f.c_str());
+                    get_words_stat(repo_dir.c_str(), name.c_str(), NULL, NULL, words_inserted, words_deleted, f.c_str());
+                    net_words_inserted += words_inserted;
+                    net_words_deleted += words_deleted;
+                    // store files info
+                    x.filenames.push_back(name);
+                    x.filesstat.push_back(Statistics(tmp, lines_inserted, lines_deleted, words_inserted, words_deleted, true));
+                }
+                // get figure details
+                get_files_list(repo_dir.c_str(), name.c_str(), NULL, NULL, files, pathspec_figure.c_str(), NULL, true);
+                for(auto &f: files){
+                    // get_lines_stat(repo_dir.c_str(), name.c_str(), NULL, NULL, tmp, files_changed, tmp, tmp, f.c_str());
+                    // net_words_inserted += files_changed * fig2words; // one add. delete, or modification cause contribution
+                    get_num_commits(repo_dir.c_str(), name.c_str(), NULL, NULL, tmp, f.c_str());
+                    // store files info
+                    x.filenames.push_back(name);
+                    x.filesstat.push_back(Statistics(tmp, 0, 0, fig2words, 0, true));
+                }
+                net_words_inserted += files.size() * fig2words; // one figure as on contribution
+                // get code details
+                get_files_list(repo_dir.c_str(), name.c_str(), NULL, NULL, files, pathspec_code.c_str(), NULL, true);
+                 for(auto &f: files){
+                    get_lines_stat(repo_dir.c_str(), name.c_str(), NULL, NULL, tmp, files_changed, lines_inserted, lines_deleted, f.c_str());
+                    get_words_stat(repo_dir.c_str(), name.c_str(), NULL, NULL, words_inserted, words_deleted, f.c_str());
+                    net_words_inserted += words_inserted;
+                    net_words_deleted += words_deleted;
+                    // store files info
+                    x.filenames.push_back(name);
+                    x.filesstat.push_back(Statistics(tmp, lines_inserted, lines_deleted, words_inserted, words_deleted, true));
+                }
+                break;
+            }
+        }
+        x.stats.push_back(Statistics(num_commits, net_lines_inserted, net_lines_deleted, net_words_inserted, net_words_deleted, true));
+        printf("\n  C%d, L+%d, L-%d, W+%d, W-%d\n", num_commits, net_lines_inserted, net_lines_deleted, net_words_inserted, net_words_deleted);
+        puts("done.");
+    }
+
+    // obtain time
+    time(&raw_time);
+    local_time = localtime(&raw_time);
+    
+    // generate html
+    printf("Generate html ...");
+    // generate html
+    fp = fopen(js["html"].get<std::string>().c_str(), "w");
+    if(fp == NULL){
+        puts("Failed to open html file.");
+        js.clear();
+        return false;
+    }
+    // generate file
+    fprintf(fp,
+        "<!DOCTYPE html>"
+        "<html>"
+        "<head>"
+            "<meta charset=\"utf-8\"/>"
+            "<title>Statistics of %s</title>" // 1
+            "<link rel=\"stylesheet\" type=\"text/css\" href=\"https://cdn.datatables.net/1.10.20/css/jquery.dataTables.min.css\">" // https://datatables.net/manual/styling/theme-creator
+            "<link rel=\"stylesheet\" type=\"text/css\" href=\"https://cdn.datatables.net/buttons/1.6.1/css/buttons.dataTables.min.css\">"
+            "<link href=\"style.css\" rel=\"stylesheet\" type=\"text/css\">"
+        "</head>"
+        "<body>"
+            "<header>"
+                "<h1>%s</h1>" // 2
+                "<p>Accessed at %04d-%02d-%02d %02d:%02d:%02d from git repository.</p>" // 3, 4, 5, 6, 7, 8
+            "</header>"
+            "<main>"
+                "<h2>%s</h2>" // 9
+                "<p>Note that merges won\'t give unfair points. Also, Please follow the file format of diary, otherwise it cannot detect attendence correctly.</p>"
+                "<table id=\"table1\" class=\"display\">",
+        js["title"].get<std::string>().c_str(),
+        js["title"].get<std::string>().c_str(),
+        local_time->tm_year + 1900, local_time->tm_mon + 1, local_time->tm_mday, local_time->tm_hour, local_time->tm_min, local_time->tm_sec,
+        js["subtitle"].get<std::string>().c_str()
+    );
+    // table
+    fprintf(fp, "<thead><tr>"
+                    "<th>Authors</th><th>Semester</th><th>Fake Commits</th><th>Invalid Commits</th>"
+                    "<th>Line Inserted</th><th>Line Deleted</th><th>Word Inserted</th><th>Word Deleted</th><th>Total GIT Score</th>"
+                "</tr></thead>");
+    fprintf(fp, "<tbody>");
+    for(const auto &x: contributors){
+        fprintf(fp, "<tr>");
+        for(int i = 0; i < 9; ++i)
+            fprintf(fp, "<td>0</td>");
+        fprintf(fp, "</tr>");
+    }
+    fprintf(fp, "</tbody>");
+    // residual
+    fprintf(fp, "</table>"
+            "</main>"
+            "<footer><p id=\"total_authors\">&#x2716; Total authors: %lu</p></footer>"
+            "<script type=\"text/javascript\" src=\"https://code.jquery.com/jquery-3.3.1.js\"></script>"
+            "<script type=\"text/javascript\" charset=\"utf8\" src=\"https://cdn.datatables.net/1.10.20/js/jquery.dataTables.min.js\"></script>"
+            "<script type=\"text/javascript\" charset=\"utf8\" src=\"https://cdn.datatables.net/buttons/1.6.1/js/dataTables.buttons.min.js\"></script>"
+            "<script type=\"text/javascript\" charset=\"utf8\" src=\"https://cdnjs.cloudflare.com/ajax/libs/jszip/3.1.3/jszip.min.js\"></script>"
+            "<script type=\"text/javascript\" charset=\"utf8\" src=\"https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.1.53/pdfmake.min.js\"></script>"
+            "<script type=\"text/javascript\" charset=\"utf8\" src=\"https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.1.53/vfs_fonts.js\"></script>"
+            "<script type=\"text/javascript\" charset=\"utf8\" src=\"https://cdn.datatables.net/buttons/1.6.1/js/buttons.html5.min.js\"></script>"
+            "<script>$(document).ready(function(){"
+                "$(\'#table1\').DataTable({"
+                    "dom: \'Blfrtip\',"// https://datatables.net/reference/option/dom, https://datatables.net/examples/basic_init/dom.html, https://datatables.net/manual/styling/
+                    "buttons: ["
+                        "\'copyHtml5\',"
+                        "{extend:\'excelHtml5\',title:\'%04d%02d%02d_%02d%02d%02d_%s\'},"
+                        "{extend:\'csvHtml5\',title:\'%04d%02d%02d_%02d%02d%02d_%s\'}"
+                    "]"
+                "});"
+            "});</script>"
+        "</body>"
+        "</html>",
+        contributors.size(),
+        local_time->tm_year + 1900, local_time->tm_mon + 1, local_time->tm_mday, local_time->tm_hour, local_time->tm_min, local_time->tm_sec, js["export"].get<std::string>().c_str(),
+        local_time->tm_year + 1900, local_time->tm_mon + 1, local_time->tm_mday, local_time->tm_hour, local_time->tm_min, local_time->tm_sec, js["export"].get<std::string>().c_str()
+    );
+    fclose(fp);
+    puts("done.");
+
+    js.clear();
+    return true;
+}
 
 
 // bool remove_fake_commit(){} // load fake commit id from file (manually record in json), and then count lines and words in that commit and subtract from total
