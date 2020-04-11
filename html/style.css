@@ -1,3 +1,73 @@
-td.nd {
-    background-color: burlywood;
+@import url('//cdn.datatables.net/1.10.20/css/jquery.dataTables.min.css');
+table.dataTable td.details-control {
+    background: url('http://www.datatables.net/examples/resources/details_open.png') no-repeat center center;
+    cursor: pointer;
+}
+table.dataTable tr.shown td.details-control {
+    background: url('http://www.datatables.net/examples/resources/details_close.png') no-repeat center center;
+}
+table.dataTable table {
+    width: 100%;
+    font-size: 14px;
+}
+/* table.dataTable th {
+    background-color:lightgray;
+} */
+table.dataTable td.no-diary {
+    color:rgb(204, 41, 0);
+}
+tbody td:not(:first-child) {
+    text-align: center;
+}
+
+body {
+    margin: 0px;
+    border: 0px;
+    padding: 0px;
+    background-color: rgb(245, 245, 245);
+    font-size: 18px;
+    font-family: 'Roboto', 'Noto Serif TC', Arial, sans-serif;
+}
+
+header {
+    border: 0px;
+    padding: 1px;
+    background-color: rgb(50, 50, 50);
+    color: white;
+    text-align: center;
+}
+header h1 {
+    font-size: 36px;
+    font-weight: 100px;
+    margin-bottom: -10px;
+}
+header p {
+    font-size: 12px;
+}
+
+
+main {
+    padding-left: 4%;
+    padding-right: 4%;
+}
+main h1 {
+    color: rgb(50, 50, 50);
+}
+main p {
+    font-size: 20px;
+}
+
+
+footer {
+    padding: 50px;
+}
+
+p#total_authors {
+    text-align: right;
+}
+p#notes1 {
+    text-align: center;
+}
+p#notes2 {
+    text-align: center;
 }

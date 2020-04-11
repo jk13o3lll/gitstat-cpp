@@ -1,4 +1,6 @@
 // TODO:
+// add detail: http://jsfiddle.net/twicebishop/h94m5xsw/2/
+// for detail display: https://stackoverflow.com/questions/11152327/how-to-make-html-table-vertically-scrollable
 // Fake commit, automatically for too many lines, and load fake commit num from manually record.
 // write css to overwrite some datatables settings
 
@@ -13,6 +15,7 @@
 // Exclude *.txt (case insensitve): git log ... -- ":(exclude,icase)*.txt"
 // "attedance (query id)" is for manually label the attendance at each query
 // invalid commits by all - commits included
+// export table content will change based on operation on webpage
 
 
 // Suggested compiler: GCC (Linux), Mingw-w64 (Windows)
@@ -210,7 +213,7 @@ bool get_words_stat(const char *repo_dir, const char *author_name,
 }
 
 bool get_files_list(const char *repo_dir, const char *author_name, const char *since, const char *until,
-                    std::vector<std::string> &files, const char *pathspec = NULL, const char *git_dir = NULL, bool withquotes = false){
+                    std::vector<std::string> &files, const char *pathspec = NULL, const char *git_dir = NULL){
     int len, tmp, i;
     char cmd[MAX_CMD];
     std::string result;
@@ -232,8 +235,7 @@ bool get_files_list(const char *repo_dir, const char *author_name, const char *s
     tmp = len = i = 0;
     for(const char *p = result.c_str(); *p != '\0'; ++p, ++i){
         if(*p == '\n'){
-            if(withquotes)  files.push_back("\"" + result.substr(tmp, len) + "\"");
-            else            files.push_back(result.substr(tmp, len));
+            files.push_back(result.substr(tmp, len));
             tmp = i + 1;
             len = 0;
         }
@@ -466,8 +468,8 @@ bool generate_statistics_queries(const char *config){
             "</header>"
             "<main>"
                 "<h2>%s</h2>" // 9
-                "<p>Note that merges won\'t give unfair points. Also, Please follow the file format of diary, otherwise it cannot detect attendence correctly.</p>"
-                "<table id=\"table1\" class=\"display\">",
+                "<p>Please follow the file format of diary, otherwise it cannot detect attendence correctly.<br/>Note that merges won\'t give unfair points.<br/></p>"
+                "<table id=\"table1\">",
         js["title"].get<std::string>().c_str(),
         js["title"].get<std::string>().c_str(),
         local_time->tm_year + 1900, local_time->tm_mon + 1, local_time->tm_mday, local_time->tm_hour, local_time->tm_min, local_time->tm_sec,
@@ -485,7 +487,7 @@ bool generate_statistics_queries(const char *config){
         words_count_all_queries = commits_all_queries = 0;
         git_score = 0;
         for(const auto &xs: x.stats){
-            fprintf(fp, "<td %s>%d</td>", xs.attendance? " " : " class=\"nd\"", xs.words_inserted + xs.words_deleted);
+            fprintf(fp, "<td %s>%d</td>", xs.attendance? " " : " class=\"no-diary\"", xs.words_inserted + xs.words_deleted);
             if(xs.num_commits > 0){
                 words_count_all_queries += xs.words_inserted + xs.words_deleted;
                 ++commits_all_queries;
@@ -595,36 +597,39 @@ bool generate_statistics_summary(const char *config){
                 // get total
                 get_lines_stat(repo_dir.c_str(), name.c_str(), NULL, NULL, tmp, tmp, net_lines_inserted, net_lines_deleted, pathspec_textcode.c_str());
                 // get text files detail
-                get_files_list(repo_dir.c_str(), name.c_str(), NULL, NULL, files, pathspec_text.c_str(), NULL, true);
+                get_files_list(repo_dir.c_str(), name.c_str(), NULL, NULL, files, pathspec_text.c_str());
                 for(auto &f: files){
-                    get_lines_stat(repo_dir.c_str(), name.c_str(), NULL, NULL, tmp, files_changed, lines_inserted, lines_deleted, f.c_str());
-                    get_words_stat(repo_dir.c_str(), name.c_str(), NULL, NULL, words_inserted, words_deleted, f.c_str());
+                    sprintf(buffer, "\"%s\"", f.c_str());
+                    get_lines_stat(repo_dir.c_str(), name.c_str(), NULL, NULL, tmp, files_changed, lines_inserted, lines_deleted, buffer);
+                    get_words_stat(repo_dir.c_str(), name.c_str(), NULL, NULL, words_inserted, words_deleted, buffer);
                     net_words_inserted += words_inserted;
                     net_words_deleted += words_deleted;
                     // store files info
-                    x.filenames.push_back(name);
+                    x.filenames.push_back(f.c_str());
                     x.filesstat.push_back(Statistics(tmp, lines_inserted, lines_deleted, words_inserted, words_deleted, true));
                 }
                 // get figure details
-                get_files_list(repo_dir.c_str(), name.c_str(), NULL, NULL, files, pathspec_figure.c_str(), NULL, true);
+                get_files_list(repo_dir.c_str(), name.c_str(), NULL, NULL, files, pathspec_figure.c_str());
                 for(auto &f: files){
-                    // get_lines_stat(repo_dir.c_str(), name.c_str(), NULL, NULL, tmp, files_changed, tmp, tmp, f.c_str());
+                    sprintf(buffer, "\"%s\"", f.c_str());
+                    // get_lines_stat(repo_dir.c_str(), name.c_str(), NULL, NULL, tmp, files_changed, tmp, tmp, buffer);
                     // net_words_inserted += files_changed * fig2words; // one add. delete, or modification cause contribution
-                    get_num_commits(repo_dir.c_str(), name.c_str(), NULL, NULL, tmp, f.c_str());
+                    get_num_commits(repo_dir.c_str(), name.c_str(), NULL, NULL, tmp, buffer);
                     // store files info
-                    x.filenames.push_back(name);
+                    x.filenames.push_back(f.c_str());
                     x.filesstat.push_back(Statistics(tmp, 0, 0, fig2words, 0, true));
                 }
                 net_words_inserted += files.size() * fig2words; // one figure as on contribution
                 // get code details
-                get_files_list(repo_dir.c_str(), name.c_str(), NULL, NULL, files, pathspec_code.c_str(), NULL, true);
+                get_files_list(repo_dir.c_str(), name.c_str(), NULL, NULL, files, pathspec_code.c_str());
                  for(auto &f: files){
-                    get_lines_stat(repo_dir.c_str(), name.c_str(), NULL, NULL, tmp, files_changed, lines_inserted, lines_deleted, f.c_str());
-                    get_words_stat(repo_dir.c_str(), name.c_str(), NULL, NULL, words_inserted, words_deleted, f.c_str());
+                    sprintf(buffer, "\"%s\"", f.c_str());
+                    get_lines_stat(repo_dir.c_str(), name.c_str(), NULL, NULL, tmp, files_changed, lines_inserted, lines_deleted, buffer);
+                    get_words_stat(repo_dir.c_str(), name.c_str(), NULL, NULL, words_inserted, words_deleted, buffer);
                     net_words_inserted += words_inserted;
                     net_words_deleted += words_deleted;
                     // store files info
-                    x.filenames.push_back(name);
+                    x.filenames.push_back(f.c_str());
                     x.filesstat.push_back(Statistics(tmp, lines_inserted, lines_deleted, words_inserted, words_deleted, true));
                 }
                 break;
@@ -666,7 +671,7 @@ bool generate_statistics_summary(const char *config){
             "</header>"
             "<main>"
                 "<h2>%s</h2>" // 9
-                "<p>Note that merges won\'t give unfair points. Also, Please follow the file format of diary, otherwise it cannot detect attendence correctly.</p>"
+                "<p>Please follow the file format of diary, otherwise it cannot detect attendence correctly.<br/>Note that merges won\'t give unfair points.<br/></p>"
                 "<table id=\"table1\" class=\"display\">",
         js["title"].get<std::string>().c_str(),
         js["title"].get<std::string>().c_str(),
@@ -674,15 +679,31 @@ bool generate_statistics_summary(const char *config){
         js["subtitle"].get<std::string>().c_str()
     );
     // table
-    fprintf(fp, "<thead><tr>"
-                    "<th>Authors</th><th>Semester</th><th>Fake Commits</th><th>Invalid Commits</th>"
+    fprintf(fp, "<thead><tr><th></th>"
+                    "<th>Authors</th><th>Semester</th><th>Fake Commits</th><th>Invalid Commits</th><th>Valid Commits</th>"
                     "<th>Line Inserted</th><th>Line Deleted</th><th>Word Inserted</th><th>Word Deleted</th><th>Total GIT Score</th>"
                 "</tr></thead>");
     fprintf(fp, "<tbody>");
     for(const auto &x: contributors){
-        fprintf(fp, "<tr>");
-        for(int i = 0; i < 9; ++i)
-            fprintf(fp, "<td>0</td>");
+        fprintf(fp, "<tr data-child-value=\"<table>");
+        fprintf(fp, "<thead><tr><th>Filename</th><th>Fake commits</th><th>Invalid commits</th><th>Valid commits</th>"
+                    "<th>Line inserted</th><th>Line deleted</th><th>Word inserted</th><th>Word deleted</th></thead>");
+        fprintf(fp, "<tbody>");
+        for(int i = 0; i < x.filenames.size(); ++i){
+            const Statistics &fstat = x.filesstat[i];
+            fprintf(fp, "<tr><td>%s</td><td>%d</td><td>%d</td><td>%d</td>"
+                        "<td>%d</td><td>%d</td><td>%d</td><td>%d</td></tr>",
+                        x.filenames[i].c_str(), 0, 0, fstat.num_commits,
+                        fstat.lines_inserted, fstat.lines_deleted, fstat.words_inserted, fstat.words_deleted);
+        }
+        fprintf(fp, "</tbody>");
+        fprintf(fp, "</table>\"><td class=\"details-control\"></td>");
+
+        fprintf(fp, "<td>%s</td><td>%s</td><td>%d</td><td>%d</td><td>%d</td>"
+                    "<td>%d</td><td>%d</td><td>%d</td><td>%d</td><td>%.2f</td>",
+                    x.name.c_str(), x.label[0].c_str(), 0, 0, x.stats[0].num_commits,
+                    x.stats[0].lines_inserted, x.stats[0].lines_deleted, x.stats[0].words_inserted, x.stats[0].words_deleted,
+                    w[0] * x.stats[0].num_commits + w[1] * x.stats[0].lines_inserted + w[2] * x.stats[0].lines_deleted + w[3] * x.stats[0].words_inserted + w[4] * x.stats[0].words_deleted);
         fprintf(fp, "</tr>");
     }
     fprintf(fp, "</tbody>");
@@ -698,13 +719,19 @@ bool generate_statistics_summary(const char *config){
             "<script type=\"text/javascript\" charset=\"utf8\" src=\"https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.1.53/vfs_fonts.js\"></script>"
             "<script type=\"text/javascript\" charset=\"utf8\" src=\"https://cdn.datatables.net/buttons/1.6.1/js/buttons.html5.min.js\"></script>"
             "<script>$(document).ready(function(){"
-                "$(\'#table1\').DataTable({"
+                "var table = $(\'#table1\').DataTable({"
                     "dom: \'Blfrtip\',"// https://datatables.net/reference/option/dom, https://datatables.net/examples/basic_init/dom.html, https://datatables.net/manual/styling/
                     "buttons: ["
                         "\'copyHtml5\',"
                         "{extend:\'excelHtml5\',title:\'%04d%02d%02d_%02d%02d%02d_%s\'},"
                         "{extend:\'csvHtml5\',title:\'%04d%02d%02d_%02d%02d%02d_%s\'}"
                     "]"
+                "});"
+                "$(\'#table1\').on(\'click\', \'td.details-control\', function(){"
+                    "var tr = $(this).closest(\'tr\');"
+                    "var row = table.row(tr);"
+                    "if(row.child.isShown()){ row.child.hide(); tr.removeClass(\'shown\'); }"
+                    "else{ row.child(tr.data(\'child-value\')).show(); tr.addClass(\'shown\'); }"
                 "});"
             "});</script>"
         "</body>"
@@ -719,7 +746,6 @@ bool generate_statistics_summary(const char *config){
     js.clear();
     return true;
 }
-
 
 // bool remove_fake_commit(){} // load fake commit id from file (manually record in json), and then count lines and words in that commit and subtract from total
 // bool detect_potential_fake_commit(){} // too many lines in one commit, ...
