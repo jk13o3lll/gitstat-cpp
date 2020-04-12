@@ -1,6 +1,4 @@
 // TODO:
-// add detail: http://jsfiddle.net/twicebishop/h94m5xsw/2/
-// for detail display: https://stackoverflow.com/questions/11152327/how-to-make-html-table-vertically-scrollable
 // Fake commit, automatically for too many lines, and load fake commit num from manually record.
 // write css to overwrite some datatables settings
 
@@ -88,6 +86,7 @@ struct Contributor{
     std::string diary;
     std::vector<Statistics> stats;
 
+    int num_fake_commits;
     std::vector<std::string> filenames;
     std::vector<Statistics> filesstat;
 };
@@ -120,7 +119,7 @@ bool pull_from_repository(const char *repo_dir, const char *git_dir = NULL){
 }
 
 bool get_num_commits(const char *repo_dir, const char *author_name, const char *since, const char *until,
-                    int &num_commits, const char *pathspec = NULL, const char *git_dir = NULL){
+                    int &num_commits, const char *pathspec = NULL, const char *revision_range = NULL, const char *git_dir = NULL){
     int len, tmp;
     char cmd[MAX_CMD];
     std::string result;
@@ -128,12 +127,17 @@ bool get_num_commits(const char *repo_dir, const char *author_name, const char *
     num_commits = 0;
 
     len = sprintf(cmd, "git -C \"%s\" --git-dir=\"%s\" --no-pager "
-        "shortlog -s --author=\"%s\" --no-merges",
-        repo_dir, git_dir != NULL? git_dir : ".git", author_name);
+        "shortlog -s --author=\"%s\" --no-merges %s",
+        repo_dir, git_dir != NULL? git_dir : ".git", author_name, revision_range != NULL? revision_range : " ");
     if(since != NULL)   len += sprintf(cmd + len, " --since=\"%s\"", since);
     if(until != NULL)   len += sprintf(cmd + len, " --until=\"%s\"", until);
     if(pathspec != NULL)len += sprintf(cmd + len, " -- %s", pathspec);
     if(!exec(cmd, result)) return false;
+    strncpy(cmd, result.c_str(), 5);
+    if(strstr(cmd, "fatal") != NULL){
+        printf("Failed to get_num_commits from the repository.\n%s\n", result.c_str());
+        return false;
+    }
 
     //   n1  name1
     if(result.length() > 0)
@@ -144,7 +148,7 @@ bool get_num_commits(const char *repo_dir, const char *author_name, const char *
 bool get_lines_stat(const char *repo_dir, const char *author_name,
                     const char *since, const char *until,
                     int &num_commits, int &files_changed, int &lines_inserted, int &lines_deleted,
-                    const char *pathspec = NULL, const char *git_dir = NULL){
+                    const char *pathspec = NULL, const char *revision_range = NULL, const char *git_dir = NULL){
     int len, tmp;
     char cmd[MAX_CMD];
     std::string result;
@@ -152,12 +156,17 @@ bool get_lines_stat(const char *repo_dir, const char *author_name,
     num_commits = files_changed = lines_inserted = lines_deleted = 0;
 
     len = sprintf(cmd, "git -C \"%s\" --git-dir=\"%s\" --no-pager log "
-        "--date=local --pretty=\"\" --shortstat --author=\"%s\" --no-merges",
-        repo_dir, git_dir != NULL? git_dir : ".git", author_name);
+        "--date=local --pretty=\"\" --shortstat --author=\"%s\" --no-merges %s",
+        repo_dir, git_dir != NULL? git_dir : ".git", author_name, revision_range != NULL? revision_range : " ");
     if(since != NULL)   len += sprintf(cmd + len, " --since=\"%s\"", since);
     if(until != NULL)   len += sprintf(cmd + len, " --until=\"%s\"", until);
     if(pathspec != NULL)len += sprintf(cmd + len, " -- %s", pathspec);
     if(!exec(cmd, result)) return false;
+    strncpy(cmd, result.c_str(), 5);
+    if(strstr(cmd, "fatal") != NULL){
+        printf("Failed to get_lines_stat from the repository.\n%s\n", result.c_str());
+        return false;
+    }
 
     // xx files changed, xx insertions(+), xx deletions(-)
     tmp = 0;
@@ -175,7 +184,7 @@ bool get_lines_stat(const char *repo_dir, const char *author_name,
 bool get_words_stat(const char *repo_dir, const char *author_name,
                     const char *since, const char *until,
                     int &words_inserted, int &words_deleted,
-                    const char *pathspec = NULL, const char *git_dir = NULL){
+                    const char *pathspec = NULL, const char *revision_range = NULL, const char *git_dir = NULL){
     int len;
     char cmd[MAX_CMD];
     std::string result;
@@ -184,12 +193,17 @@ bool get_words_stat(const char *repo_dir, const char *author_name,
     words_inserted = words_deleted = 0;
 
     len = sprintf(cmd, "git -C \"%s\" --git-dir=\"%s\" --no-pager log "
-        "--date=local --pretty=\"\" -p --word-diff=porcelain --author=\"%s\" --no-merges",
-        repo_dir, git_dir != NULL? git_dir : ".git", author_name);
+        "--date=local --pretty=\"\" -p --word-diff=porcelain --author=\"%s\" --no-merges %s",
+        repo_dir, git_dir != NULL? git_dir : ".git", author_name, revision_range != NULL? revision_range : " ");
     if(since != NULL)   len += sprintf(cmd + len, " --since=\"%s\"", since);
     if(until != NULL)   len += sprintf(cmd + len, " --until=\"%s\"", until);
     if(pathspec != NULL)len += sprintf(cmd + len, " -- %s", pathspec);
     if(!exec(cmd, result)) return false;
+    strncpy(cmd, result.c_str(), 5);
+    if(strstr(cmd, "fatal") != NULL){
+        printf("Failed to get_words_stat from the repository.\n%s\n", result.c_str());
+        return false;
+    }
 
     // \n+... (add), \n-... (delete), \n' ' (no change)
     newline = true;
@@ -213,22 +227,26 @@ bool get_words_stat(const char *repo_dir, const char *author_name,
 }
 
 bool get_files_list(const char *repo_dir, const char *author_name, const char *since, const char *until,
-                    std::vector<std::string> &files, const char *pathspec = NULL, const char *git_dir = NULL){
+                    std::vector<std::string> &files, const char *pathspec = NULL, const char *revision_range = NULL, const char *git_dir = NULL){
     int len, tmp, i;
     char cmd[MAX_CMD];
     std::string result;
 
     // git log --pretty="" --name-only --author="..." --since=... --until=... -- "*.tex" | sort -u
     // git --no-pager log --pretty="" --name-only --author="..." --no-merges -- "*.png" | sort -u
-
     len = sprintf(cmd, "git -C \"%s\" --git-dir=\"%s\" --no-pager log "
-        "--date=local --pretty=\"\" --name-only --author=\"%s\" --no-merges",
-        repo_dir, git_dir != NULL? git_dir : ".git", author_name);
+        "--date=local --pretty=\"\" --name-only --author=\"%s\" --no-merges %s",
+        repo_dir, git_dir != NULL? git_dir : ".git", author_name, revision_range != NULL? revision_range : " ");
     if(since != NULL)   len += sprintf(cmd + len, " --since=\"%s\"", since);
     if(until != NULL)   len += sprintf(cmd + len, " --until=\"%s\"", until);
     if(pathspec != NULL)len += sprintf(cmd + len, " -- %s", pathspec);
     len += sprintf(cmd + len, " | sort -u"); // sort and unique
     if(!exec(cmd, result)) return false;
+    strncpy(cmd, result.c_str(), 5);
+    if(strstr(cmd, "fatal") != NULL){
+        printf("Failed to get_files_list from the repository.\n%s\n", result.c_str());
+        return false;
+    }
 
     // filename \n
     files.clear();
@@ -297,6 +315,7 @@ bool generate_statistics_queries(const char *config){
     std::string repo_dir;
     std::vector<Query> queries;
     std::vector<Contributor> contributors;
+    std::vector<std::string> fakecommits;
     float w[5]; // weights: #commits, lines(+), lines(-), words(+), words(-)
     int fig2words;
     std::string pathspec_text, pathspec_figure, pathspec_code, pathspec_include, pathspec_diary;
@@ -309,7 +328,7 @@ bool generate_statistics_queries(const char *config){
     bool has_diary;
     int tmp, num_commits, files_changed, lines_inserted, lines_deleted, words_inserted, words_deleted;
     int net_files_changed, net_lines_inserted, net_lines_deleted, net_words_inserted, net_words_deleted;
-    int words_count_all_queries, commits_all_queries;
+    int lines_count_all_queries, words_count_all_queries, commits_all_queries, num_fake_commits;
     float git_score;
 
     // load configuration
@@ -332,6 +351,8 @@ bool generate_statistics_queries(const char *config){
         queries.push_back(Query(x));
     for(const auto &x: js["contributors"])
         contributors.push_back(Contributor(x));
+    for(const auto &x: js["fake commit"])
+        fakecommits.push_back(x.get<std::string>() + "^1.." + x.get<std::string>()); // only log 1 commit
     w[0] = js["weights"]["num commits"].get<float>();
     w[1] = js["weights"]["lines inserted"].get<float>();
     w[2] = js["weights"]["lines deleted"].get<float>();
@@ -365,7 +386,7 @@ bool generate_statistics_queries(const char *config){
         }
         // querying
         x.stats.clear();
-        words_count_all_queries = commits_all_queries = 0;
+        words_count_all_queries = commits_all_queries = num_fake_commits = 0;
         for(const auto &q: queries){
             net_lines_inserted = net_lines_deleted = net_words_inserted = net_words_deleted = 0;
             // get lines and words statistics
@@ -396,6 +417,36 @@ bool generate_statistics_queries(const char *config){
                     net_lines_deleted += lines_deleted;
                     net_words_inserted += words_inserted;
                     net_words_deleted += words_deleted;
+                    // every fake commit for this query
+                    for(const auto &fake: fakecommits){
+                        get_num_commits(repo_dir.c_str(), name.c_str(), q.since.c_str(), q.until.c_str(),
+                            tmp, pathspec_include.c_str(), fake.c_str());
+                        if(tmp > 0){
+                            ++num_fake_commits;
+                            // text
+                            get_lines_stat(repo_dir.c_str(), name.c_str(), q.since.c_str(), q.until.c_str(),
+                                tmp, files_changed, lines_inserted, lines_deleted, pathspec_text.c_str(), fake.c_str());
+                            get_words_stat(repo_dir.c_str(), name.c_str(), q.since.c_str(), q.until.c_str(),
+                                words_inserted, words_deleted, pathspec_text.c_str(), fake.c_str());
+                            net_lines_inserted -= lines_inserted;
+                            net_lines_deleted -= lines_deleted;
+                            net_words_inserted -= words_inserted;
+                            net_words_deleted -= words_deleted;
+                            // figure
+                            get_lines_stat(repo_dir.c_str(), name.c_str(), q.since.c_str(), q.until.c_str(),
+                                tmp, files_changed, lines_inserted, lines_deleted, pathspec_text.c_str()), fake.c_str();
+                            net_words_inserted -= files_changed * fig2words;
+                            // code
+                            get_lines_stat(repo_dir.c_str(), name.c_str(), q.since.c_str(), q.until.c_str(),
+                                tmp, files_changed, lines_inserted, lines_deleted, pathspec_code.c_str(), fake.c_str());
+                            get_words_stat(repo_dir.c_str(), name.c_str(), q.since.c_str(), q.until.c_str(),
+                                words_inserted, words_deleted, pathspec_code.c_str(), fake.c_str());
+                            net_lines_inserted -= lines_inserted;
+                            net_lines_deleted -= lines_deleted;
+                            net_words_inserted -= words_inserted;
+                            net_words_deleted -= words_deleted;
+                        }
+                    }
                     break; // until find one valid name
                 }
             }
@@ -429,10 +480,10 @@ bool generate_statistics_queries(const char *config){
                 num_commits, net_lines_inserted, net_lines_deleted,
                 net_words_inserted, net_words_deleted, has_diary
             ));
-            printf("\n  %s, %s: %d commits, L+%d, L-%d, W+%d, W-%d, %s diary",
-                x.name.c_str(), q.name.c_str(), num_commits,
-                net_lines_inserted, net_lines_deleted,
-                net_words_inserted, net_words_deleted,
+            x.num_fake_commits = num_fake_commits;
+            printf("\n  %s, %s: %d commits, %d fake, L+%d, L-%d, W+%d, W-%d, %s diary",
+                x.name.c_str(), q.name.c_str(), num_commits, num_fake_commits,
+                net_lines_inserted, net_lines_deleted, net_words_inserted, net_words_deleted,
                 has_diary? "has" : "no");
         }
         puts("\ndone.");
@@ -468,7 +519,10 @@ bool generate_statistics_queries(const char *config){
             "</header>"
             "<main>"
                 "<h2>%s</h2>" // 9
-                "<p>Please follow the file format of diary, otherwise it cannot detect attendence correctly.<br/>Note that merges won\'t give unfair points.<br/></p>"
+                "<p>Please follow the file format of diary, otherwise it cannot detect attendence correctly.<br/>"
+                "Note that merges won\'t give unfair points.<br/>"
+                "<font class=\"no-diary\">This color</font> means no diary for that query; "
+                "<font class=\"fake\">This color</font> means you have fake commit.</p>"
                 "<table id=\"table1\">",
         js["title"].get<std::string>().c_str(),
         js["title"].get<std::string>().c_str(),
@@ -479,16 +533,17 @@ bool generate_statistics_queries(const char *config){
     fprintf(fp, "<thead><tr><th>Authors</th><th>Semester</th>");
     for(int i = 0; i < queries.size(); ++i)
         fprintf(fp, "<th>%s</th>", queries[i].name.c_str());
-    fprintf(fp, "<th>Net<br/>words count</th><th>Weeks<br/>with commits</th><th>GIT Score</th></tr></thead>");
+    fprintf(fp, "<th>Net<br/>lines count</th><th>Net<br/>words count</th><th>Weeks<br/>with commits</th><th>Fake commits</th><th>GIT Score</th></tr></thead>");
     // contents
     fprintf(fp, "<tbody>");
     for(const auto &x: contributors){
         fprintf(fp, "<tr><td>%s</td><td>%s</td>", x.name.c_str(), x.label[0].c_str());
-        words_count_all_queries = commits_all_queries = 0;
+        lines_count_all_queries = words_count_all_queries = commits_all_queries = 0;
         git_score = 0;
         for(const auto &xs: x.stats){
             fprintf(fp, "<td %s>%d</td>", xs.attendance? " " : " class=\"no-diary\"", xs.words_inserted + xs.words_deleted);
             if(xs.num_commits > 0){
+                lines_count_all_queries += xs.lines_inserted + xs.lines_deleted;
                 words_count_all_queries += xs.words_inserted + xs.words_deleted;
                 ++commits_all_queries;
                 git_score += w[0] * xs.num_commits
@@ -496,8 +551,8 @@ bool generate_statistics_queries(const char *config){
                        + w[3] * xs.words_inserted + w[4] * xs.words_deleted;
             }
         }
-        fprintf(fp, "<td>%d</td><td>%d</td><td>%.2f</td></tr>",
-            words_count_all_queries, commits_all_queries, git_score);
+        fprintf(fp, "<td>%d</td><td>%d</td><td>%d</td><td %s>%d</td><td>%.2f</td></tr>",
+            lines_count_all_queries, words_count_all_queries, commits_all_queries, x.num_fake_commits > 0? "class=\"fake\"" : " ", x.num_fake_commits, git_score);
     }
     fprintf(fp, "</tbody>");
     // residual
@@ -541,6 +596,7 @@ bool generate_statistics_summary(const char *config){
 
     std::string repo_dir;
     std::vector<Contributor> contributors;
+    std::vector<std::string> fakecommits;
 
     float w[5]; // weights: #commits, lines(+), lines(-), words(+), words(-)
     int fig2words;
@@ -550,7 +606,7 @@ bool generate_statistics_summary(const char *config){
     tm *local_time;
 
     std::vector<std::string> files;
-    int tmp, num_commits, files_changed;
+    int tmp, num_commits, files_changed, num_fake_commits;
     int lines_inserted, lines_deleted, words_inserted, words_deleted;
     int net_lines_inserted, net_lines_deleted, net_words_inserted, net_words_deleted;
     float git_score;
@@ -572,6 +628,8 @@ bool generate_statistics_summary(const char *config){
     printf("%lu contributors\n\n", js["contributors"].size());
     for(const auto &x: js["contributors"])
         contributors.push_back(Contributor(x));
+    for(const auto &x: js["fake commit"])
+        fakecommits.push_back(x.get<std::string>() + "^1.." + x.get<std::string>()); // only log 1 commit
     w[0] = js["weights"]["num commits"].get<float>();
     w[1] = js["weights"]["lines inserted"].get<float>();
     w[2] = js["weights"]["lines deleted"].get<float>();
@@ -588,20 +646,20 @@ bool generate_statistics_summary(const char *config){
     for(auto &x: contributors){
         printf("Get data for %s ...", x.name.c_str());
         x.stats.clear();
-        net_words_inserted = net_words_deleted = 0;
+        net_lines_inserted = net_lines_deleted = net_words_inserted = net_words_deleted = num_fake_commits = 0;
         git_score = 0.0f;
         for(auto &name: x.email){
             // get num_commits
             get_num_commits(repo_dir.c_str(), name.c_str(), NULL, NULL, num_commits, pathspec_include.c_str());
             if(num_commits > 0){
-                // get total
-                get_lines_stat(repo_dir.c_str(), name.c_str(), NULL, NULL, tmp, tmp, net_lines_inserted, net_lines_deleted, pathspec_textcode.c_str());
                 // get text files detail
                 get_files_list(repo_dir.c_str(), name.c_str(), NULL, NULL, files, pathspec_text.c_str());
                 for(auto &f: files){
                     sprintf(buffer, "\"%s\"", f.c_str());
                     get_lines_stat(repo_dir.c_str(), name.c_str(), NULL, NULL, tmp, files_changed, lines_inserted, lines_deleted, buffer);
                     get_words_stat(repo_dir.c_str(), name.c_str(), NULL, NULL, words_inserted, words_deleted, buffer);
+                    net_lines_inserted += lines_inserted;
+                    net_lines_deleted += lines_deleted;
                     net_words_inserted += words_inserted;
                     net_words_deleted += words_deleted;
                     // store files info
@@ -622,21 +680,49 @@ bool generate_statistics_summary(const char *config){
                 net_words_inserted += files.size() * fig2words; // one figure as on contribution
                 // get code details
                 get_files_list(repo_dir.c_str(), name.c_str(), NULL, NULL, files, pathspec_code.c_str());
-                 for(auto &f: files){
+                for(auto &f: files){
                     sprintf(buffer, "\"%s\"", f.c_str());
                     get_lines_stat(repo_dir.c_str(), name.c_str(), NULL, NULL, tmp, files_changed, lines_inserted, lines_deleted, buffer);
                     get_words_stat(repo_dir.c_str(), name.c_str(), NULL, NULL, words_inserted, words_deleted, buffer);
+                    net_lines_inserted += lines_inserted;
+                    net_lines_deleted += lines_deleted;
                     net_words_inserted += words_inserted;
                     net_words_deleted += words_deleted;
                     // store files info
                     x.filenames.push_back(f.c_str());
                     x.filesstat.push_back(Statistics(tmp, lines_inserted, lines_deleted, words_inserted, words_deleted, true));
                 }
+                // get filenames in fakecommits, then removed from each file
+                for(const auto &fake: fakecommits){
+                    // didn't substract stat in each file for convenient, just subtract summary
+                    get_num_commits(repo_dir.c_str(), name.c_str(), NULL, NULL, tmp, pathspec_include.c_str(), fake.c_str());
+                    if(tmp > 0){
+                        ++num_fake_commits;
+                        // text
+                        get_lines_stat(repo_dir.c_str(), name.c_str(), NULL, NULL, tmp, files_changed, lines_inserted, lines_deleted, pathspec_text.c_str(), fake.c_str());
+                        get_words_stat(repo_dir.c_str(), name.c_str(), NULL, NULL, words_inserted, words_deleted, pathspec_text.c_str(), fake.c_str());
+                        net_lines_inserted -= lines_inserted;
+                        net_lines_deleted -= lines_deleted;
+                        net_words_inserted -= words_inserted;
+                        net_words_deleted -= words_deleted;
+                        // figure
+                        get_files_list(repo_dir.c_str(), name.c_str(), NULL, NULL, files, pathspec_figure.c_str(), fake.c_str());
+                        net_words_inserted -= files.size() * fig2words; // one figure as on contribution
+                        // code
+                        get_lines_stat(repo_dir.c_str(), name.c_str(), NULL, NULL, tmp, files_changed, lines_inserted, lines_deleted, pathspec_code.c_str(), fake.c_str());
+                        get_words_stat(repo_dir.c_str(), name.c_str(), NULL, NULL, words_inserted, words_deleted, pathspec_code.c_str(), fake.c_str());
+                        net_lines_inserted -= lines_inserted;
+                        net_lines_deleted -= lines_deleted;
+                        net_words_inserted -= words_inserted;
+                        net_words_deleted -= words_deleted;
+                    }
+                }
                 break;
             }
         }
         x.stats.push_back(Statistics(num_commits, net_lines_inserted, net_lines_deleted, net_words_inserted, net_words_deleted, true));
-        printf("\n  C%d, L+%d, L-%d, W+%d, W-%d\n", num_commits, net_lines_inserted, net_lines_deleted, net_words_inserted, net_words_deleted);
+        x.num_fake_commits = num_fake_commits;
+        printf("\n  C%d, FC%d, L+%d, L-%d, W+%d, W-%d\n", num_commits, num_fake_commits, net_lines_inserted, net_lines_deleted, net_words_inserted, net_words_deleted);
         puts("done.");
     }
 
@@ -671,7 +757,9 @@ bool generate_statistics_summary(const char *config){
             "</header>"
             "<main>"
                 "<h2>%s</h2>" // 9
-                "<p>Please follow the file format of diary, otherwise it cannot detect attendence correctly.<br/>Note that merges won\'t give unfair points.<br/></p>"
+                "<p>Please follow the file format of diary, otherwise it cannot detect attendence correctly.<br/>"
+                "Note that merges won\'t give unfair points.<br/>"
+                "<font class=\"fake\">This color</font> means you have fake commit.</p>"
                 "<table id=\"table1\" class=\"display\">",
         js["title"].get<std::string>().c_str(),
         js["title"].get<std::string>().c_str(),
@@ -680,7 +768,7 @@ bool generate_statistics_summary(const char *config){
     );
     // table
     fprintf(fp, "<thead><tr><th></th>"
-                    "<th>Authors</th><th>Semester</th><th>Fake Commits</th><th>Invalid Commits</th><th>Valid Commits</th>"
+                    "<th>Authors</th><th>Semester</th><th>Fake Commits</th><th>Invalid Commits</th><th>Valid Commits</th>" // valid commit for file ext not included?
                     "<th>Line Inserted</th><th>Line Deleted</th><th>Word Inserted</th><th>Word Deleted</th><th>Total GIT Score</th>"
                 "</tr></thead>");
     fprintf(fp, "<tbody>");
@@ -699,9 +787,9 @@ bool generate_statistics_summary(const char *config){
         fprintf(fp, "</tbody>");
         fprintf(fp, "</table>\"><td class=\"details-control\"></td>");
 
-        fprintf(fp, "<td>%s</td><td>%s</td><td>%d</td><td>%d</td><td>%d</td>"
+        fprintf(fp, "<td>%s</td><td>%s</td><td %s>%d</td><td>%d</td><td>%d</td>"
                     "<td>%d</td><td>%d</td><td>%d</td><td>%d</td><td>%.2f</td>",
-                    x.name.c_str(), x.label[0].c_str(), 0, 0, x.stats[0].num_commits,
+                    x.name.c_str(), x.label[0].c_str(), x.num_fake_commits > 0? "class=\"fake\"" : " ", x.num_fake_commits, 0, x.stats[0].num_commits,
                     x.stats[0].lines_inserted, x.stats[0].lines_deleted, x.stats[0].words_inserted, x.stats[0].words_deleted,
                     w[0] * x.stats[0].num_commits + w[1] * x.stats[0].lines_inserted + w[2] * x.stats[0].lines_deleted + w[3] * x.stats[0].words_inserted + w[4] * x.stats[0].words_deleted);
         fprintf(fp, "</tr>");

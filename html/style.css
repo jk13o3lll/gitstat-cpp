@@ -13,11 +13,14 @@ table.dataTable table {
 /* table.dataTable th {
     background-color:lightgray;
 } */
-table.dataTable td.no-diary {
-    color:rgb(204, 41, 0);
-}
 tbody td:not(:first-child) {
     text-align: center;
+}
+.no-diary {
+    color:rgb(210, 45, 5);
+}
+.fake {
+    color:rgb(0, 229, 255);
 }
 
 body {
