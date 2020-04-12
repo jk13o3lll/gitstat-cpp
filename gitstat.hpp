@@ -445,6 +445,7 @@ bool generate_statistics_queries(const char *config){
                             net_lines_deleted -= lines_deleted;
                             net_words_inserted -= words_inserted;
                             net_words_deleted -= words_deleted;
+                            printf("\n  [fake commit] %s", fake.c_str());
                         }
                     }
                     break; // until find one valid name
@@ -715,6 +716,7 @@ bool generate_statistics_summary(const char *config){
                         net_lines_deleted -= lines_deleted;
                         net_words_inserted -= words_inserted;
                         net_words_deleted -= words_deleted;
+                        printf("\n  [fake commit] %s", fake.c_str());
                     }
                 }
                 break;
