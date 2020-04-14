@@ -2,6 +2,11 @@
 // Fake commit, automatically for too many lines, and load fake commit num from manually record.
 // write css to overwrite some datatables settings
 
+// why git log xxx only show merge (pull request)
+// It still could be found manually.
+// git log -p --word-diff=porcelain 9f5ba70^1..9f5ba70
+// for git rev-list, if there are two parents (merged) it will select the first one and ...
+
 // Problems:
 // count the files no mater deleted, rename?
 // words count to code is unfair
@@ -168,6 +173,7 @@ bool get_lines_stat(const char *repo_dir, const char *author_name,
         return false;
     }
 
+    // word diff to avoid empty line? (only '\n')
     // xx files changed, xx insertions(+), xx deletions(-)
     tmp = 0;
     for(const char *p= result.c_str(); *p != '\0'; ++p)
@@ -188,7 +194,7 @@ bool get_words_stat(const char *repo_dir, const char *author_name,
     int len;
     char cmd[MAX_CMD];
     std::string result;
-    bool newline; // previous char is '\n'
+    bool flag;
 
     words_inserted = words_deleted = 0;
 
@@ -206,22 +212,27 @@ bool get_words_stat(const char *repo_dir, const char *author_name,
     }
 
     // \n+... (add), \n-... (delete), \n' ' (no change)
-    newline = true;
+    // start checking first char of every after @\n
+    // count words by space or alpha
+    flag = false;
     for(const char *p = result.c_str(); *p != '\0'; ++p){
-        if(newline){
-            if(*p == '+'){
-                for(++p; *p != '\n' && *p !='\0'; ++p)
-                    if(!isspace(p[0]) && (isspace(p[1]) || p[1] == '\0')) ++words_inserted;
-                    // if(isalnum(p[0]) && !isalnum(p[1])) ++words_inserted;
-            }
-            else if(*p == '-'){
-                for(++p; *p != '\n' && *p !='\0'; ++p)
-                    if(!isspace(p[0]) && (isspace(p[1]) || p[1] == '\0')) ++words_deleted;
-                    // if(isalnum(p[0]) && !isalnum(p[1])) ++words_deleted;
-            }
-            else if(*p != '\n') newline = false;
+        switch(*p){
+            case '+':
+                if(flag)
+                    for(++p; *p != '\n'; ++p)
+                        if(isalnum(p[0]) && !isalnum(p[1]))
+                            ++words_inserted;
+                break;
+            case '-':
+                if(flag)
+                    for(++p; *p != '\n'; ++p)
+                        if(isalnum(p[0]) && !isalnum(p[1]))
+                            ++words_deleted;
+                break;
+            case '@': flag = true; break;
+            case 'd': flag = false; break;
         }
-        else if(*p == '\n') newline = true;
+        while(*p != '\n') ++p;
     }
     return true;
 }
@@ -406,7 +417,7 @@ bool generate_statistics_queries(const char *config){
                     net_words_deleted += words_deleted;
                     // figure
                     get_lines_stat(repo_dir.c_str(), name.c_str(), q.since.c_str(), q.until.c_str(),
-                        tmp, files_changed, lines_inserted, lines_deleted, pathspec_text.c_str());
+                        tmp, files_changed, lines_inserted, lines_deleted, pathspec_figure.c_str());
                     net_words_inserted += files_changed * fig2words;
                     // code
                     get_lines_stat(repo_dir.c_str(), name.c_str(), q.since.c_str(), q.until.c_str(),
@@ -434,7 +445,7 @@ bool generate_statistics_queries(const char *config){
                             net_words_deleted -= words_deleted;
                             // figure
                             get_lines_stat(repo_dir.c_str(), name.c_str(), q.since.c_str(), q.until.c_str(),
-                                tmp, files_changed, lines_inserted, lines_deleted, pathspec_text.c_str()), fake.c_str();
+                                tmp, files_changed, lines_inserted, lines_deleted, pathspec_figure.c_str()), fake.c_str();
                             net_words_inserted -= files_changed * fig2words;
                             // code
                             get_lines_stat(repo_dir.c_str(), name.c_str(), q.since.c_str(), q.until.c_str(),
@@ -448,7 +459,7 @@ bool generate_statistics_queries(const char *config){
                             printf("\n  [fake commit] %s", fake.c_str());
                         }
                     }
-                    break; // until find one valid name
+                    // break; // until find one valid name
                 }
             }
             // check attendane
@@ -607,7 +618,7 @@ bool generate_statistics_summary(const char *config){
     tm *local_time;
 
     std::vector<std::string> files;
-    int tmp, num_commits, files_changed, num_fake_commits;
+    int tmp, num_commits, num_fake_commits, files_changed, net_num_commits, net_num_fake_commits;
     int lines_inserted, lines_deleted, words_inserted, words_deleted;
     int net_lines_inserted, net_lines_deleted, net_words_inserted, net_words_deleted;
     float git_score;
@@ -647,11 +658,13 @@ bool generate_statistics_summary(const char *config){
     for(auto &x: contributors){
         printf("Get data for %s ...", x.name.c_str());
         x.stats.clear();
-        net_lines_inserted = net_lines_deleted = net_words_inserted = net_words_deleted = num_fake_commits = 0;
+        net_num_commits = net_num_fake_commits = 0;
+        net_lines_inserted = net_lines_deleted = net_words_inserted = net_words_deleted = 0;
         git_score = 0.0f;
         for(auto &name: x.email){
             // get num_commits
             get_num_commits(repo_dir.c_str(), name.c_str(), NULL, NULL, num_commits, pathspec_include.c_str());
+            printf("[%d]", num_commits);
             if(num_commits > 0){
                 // get text files detail
                 get_files_list(repo_dir.c_str(), name.c_str(), NULL, NULL, files, pathspec_text.c_str());
@@ -694,6 +707,7 @@ bool generate_statistics_summary(const char *config){
                     x.filesstat.push_back(Statistics(tmp, lines_inserted, lines_deleted, words_inserted, words_deleted, true));
                 }
                 // get filenames in fakecommits, then removed from each file
+                num_fake_commits = 0;
                 for(const auto &fake: fakecommits){
                     // didn't substract stat in each file for convenient, just subtract summary
                     get_num_commits(repo_dir.c_str(), name.c_str(), NULL, NULL, tmp, pathspec_include.c_str(), fake.c_str());
@@ -719,12 +733,13 @@ bool generate_statistics_summary(const char *config){
                         printf("\n  [fake commit] %s", fake.c_str());
                     }
                 }
-                break;
+                net_num_commits += num_commits - num_fake_commits;
+                net_num_commits += num_fake_commits;
             }
         }
-        x.stats.push_back(Statistics(num_commits, net_lines_inserted, net_lines_deleted, net_words_inserted, net_words_deleted, true));
-        x.num_fake_commits = num_fake_commits;
-        printf("\n  C%d, FC%d, L+%d, L-%d, W+%d, W-%d\n", num_commits, num_fake_commits, net_lines_inserted, net_lines_deleted, net_words_inserted, net_words_deleted);
+        x.stats.push_back(Statistics(net_num_commits, net_lines_inserted, net_lines_deleted, net_words_inserted, net_words_deleted, true));
+        x.num_fake_commits = net_num_fake_commits;
+        printf("\n  C%d, FC%d, L+%d, L-%d, W+%d, W-%d\n", net_num_commits, net_num_fake_commits, net_lines_inserted, net_lines_deleted, net_words_inserted, net_words_deleted);
         puts("done.");
     }
 

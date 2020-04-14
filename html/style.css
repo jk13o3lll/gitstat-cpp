@@ -8,13 +8,16 @@ table.dataTable tr.shown td.details-control {
 }
 table.dataTable table {
     width: 100%;
-    font-size: 14px;
+    font-size: 12px;
 }
 /* table.dataTable th {
     background-color:lightgray;
 } */
 tbody td:not(:first-child) {
     text-align: center;
+}
+table {
+    font-size: 14px;
 }
 .no-diary {
     color:rgb(210, 45, 5);
