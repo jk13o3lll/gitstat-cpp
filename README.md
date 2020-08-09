@@ -77,3 +77,7 @@ To set it as routine in Linux, please use `crontab`. (ex. update every hour)
 crontab -e
 0 1 * * * gitstat.exe config.json
 ```
+
+## Contact
+
+ccwang.jack@gmail.com
